@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#07090f">
+  <title>Sign in · SAGE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Allura&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/vision.css') }}">
+</head>
+<body class="auth-body">
+  {% include 'partials/icon_sprite.html' %}
+  <div class="auth-shell">
+    <section class="auth-brand-panel auth-reference-panel">
+      <!-- ================================================================
+           SAGE LOGIN HERO — DASHBOARD REFERENCE PANEL
+           Uses the supplied dashboard reference as the visual left panel.
+           The sign-in form remains normal live HTML on the right side.
+           ================================================================ -->
+      <div class="auth-reference-hero" aria-hidden="true"></div>
+      <div class="auth-hero-a11y">
+        <strong>SAGE</strong>
+        <span>Business clarity, every day.</span>
+        <h1>Know what your organization earns, spends, owns and moves.</h1>
+        <p>One configurable workspace for finance, requests, inventory, assets, departments, staff and management reporting.</p>
+        <span>© Adetomi Adetoye, Founder and Owner of SAGE Business OS.</span>
+      </div>
+    </section>
+    <section class="auth-form-panel"><button class="icon-button auth-theme" id="authTheme"><svg class="sun-icon"><use href="#i-sun"/></svg><svg class="moon-icon"><use href="#i-moon"/></svg></button><div class="auth-form-wrap"><div class="auth-logo-mobile"><span class="sage-native-brand auth-native-brand mobile"><span class="sage-mark"><i></i></span><span class="sage-wordmark"><b>S</b><b class="sage-a" aria-hidden="true">Λ</b><b>G</b><b>E</b><small>SAGE</small></span></span></div><span class="auth-kicker">SECURE SIGN IN</span><h2>Welcome back</h2><p>Sign in with your organization, staff or individual business account.</p><form id="loginForm" class="auth-form"><label>Email address<input name="email" type="email" placeholder="you@company.com" required autocomplete="email"></label><label>Password<div class="password-field"><input name="password" type="password" required autocomplete="current-password"><button type="button" class="icon-button compact" data-toggle-password><svg><use href="#i-eye"/></svg></button></div></label><div class="auth-form-row"><label class="check-row"><input name="remember" type="checkbox" checked> Remember me</label><a href="#" data-coming-soon>Forgot password?</a></div><div class="form-message" id="loginMessage"></div><button type="submit" class="btn primary auth-submit">Sign in to SAGE</button></form><div class="auth-switch">New to SAGE? <a href="/register">Create organization or individual workspace</a></div><div class="platform-admin-entry"><a href="/platform-admin/login" target="_blank" rel="noopener"><span>Developer / Platform Admin</span><small>Open restricted owner-management console ↗</small></a></div><div class="demo-note"><svg><use href="#i-shield"/></svg><span><strong>Staff registration is controlled</strong><small>Employees join using the private registration link created by their owner or organization admin.</small></span></div></div></section>
+  </div>
+  <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+</body>
+</html>

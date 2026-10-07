@@ -1,0 +1,14 @@
+<section class="page-shell page-enter" data-page-view="departments">
+  <div class="page-heading split"><div><p class="eyebrow">ORGANIZATION</p><h1>{% if owner_admin %}Departments{% else %}My Department{% endif %}</h1><p>{% if owner_admin %}Create and manage every department, unit, branch or special team in {{ current_user.organization.name }}.{% elif current_user.department %}Your workspace is scoped to {{ current_user.department.name }}.{% else %}No department has been assigned to your account yet.{% endif %}</p></div>{% if owner_admin %}<button class="btn primary" data-open-department><svg><use href="#i-plus"/></svg>Add Department</button>{% endif %}</div>
+
+  <div class="department-grid">
+    {% for dept in departments %}
+    <article class="department-card"><div class="department-top"><span class="department-icon ict"><svg><use href="#i-building"/></svg></span>{% if owner_admin %}<button class="icon-button compact"><svg><use href="#i-more"/></svg></button>{% endif %}</div><h3>{{ dept.name }}</h3><p>{{ dept.description or 'Operational unit · Active' }}</p><div class="department-meta"><span><b>{{ dept.users.count() }}</b><small>Registered users</small></span><span><b>{{ dept.code or '—' }}</b><small>Department code</small></span></div><button class="department-open">Open department <svg><use href="#i-arrow-up"/></svg></button></article>
+    {% endfor %}
+    {% if owner_admin %}<button class="department-card add-card" data-open-department><span><svg><use href="#i-plus"/></svg></span><strong>Add a missing department</strong><p>Create any custom unit, branch, team, store, workshop or operational section.</p></button>{% endif %}
+  </div>
+
+  {% if owner_admin %}
+  <div class="modal-backdrop nested-modal" id="departmentModal" aria-hidden="true"><div class="modal-card small-modal"><div class="modal-head"><div><h3>Add Department</h3><p>New departments are stored in your organization database immediately.</p></div><button class="icon-button" data-close-modal="departmentModal"><svg><use href="#i-x"/></svg></button></div><form class="modal-form" id="departmentForm"><label>Department name<input name="name" required placeholder="e.g. Mechanical Workshop"></label><div class="form-grid two"><label>Department code<input name="code" placeholder="MECH"></label><label>Status<select disabled><option>Active</option></select></label></div><label>Description<textarea name="description" rows="3" placeholder="What does this department handle?"></textarea></label><div class="form-message" data-department-message></div><div class="modal-actions"><button type="button" class="btn secondary" data-close-modal="departmentModal">Cancel</button><button type="submit" class="btn primary">Create Department</button></div></form></div></div>
+  {% endif %}
+</section>

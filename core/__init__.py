@@ -1,0 +1,1 @@
+"""Core Vision configuration package."""

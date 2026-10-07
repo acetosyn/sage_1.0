@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#07090f">
+  <title>Create workspace · SAGE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/vision.css') }}">
+</head>
+<body class="auth-body">
+  {% include 'partials/icon_sprite.html' %}
+  <div class="auth-shell auth-shell-wide">
+    <!-- ================================================================ -->
+    <!-- SAGE OWNER ONBOARDING HERO                                      -->
+    <!-- ================================================================ -->
+    <section class="auth-brand-panel register-showcase">
+      <a href="/login" class="brand-link auth-brand"><span class="sage-native-brand auth-native-brand"><span class="sage-mark"><i></i></span><span class="sage-wordmark"><b>S</b><b class="sage-a" aria-hidden="true">Λ</b><b>G</b><b>E</b><small>SAGE</small></span></span></a>
+      <div class="auth-showcase"><span class="showcase-pill">Built for organizations and independent businesses</span><h1>Choose the setup that matches <em>how you actually work.</em></h1><p>SAGE can run a multi-department organization or a lean owner-operated business without forcing both into the same workflow.</p><ul class="showcase-list"><li><svg><use href="#i-check"/></svg>Organization workspace with automatic departments</li><li><svg><use href="#i-check"/></svg>Individual / entrepreneur business workspace</li><li><svg><use href="#i-check"/></svg>Live income, expense, stock, assets and reports</li><li><svg><use href="#i-check"/></svg>Add staff later when your business grows</li></ul></div>
+      <div class="auth-caption">One SAGE account · The right structure for your business</div>
+    </section>
+
+    <!-- ================================================================ -->
+    <!-- FOUR-STEP OWNER REGISTRATION                                    -->
+    <!-- ================================================================ -->
+    <section class="auth-form-panel owner-register-panel">
+      <button class="icon-button auth-theme" id="authTheme"><svg class="sun-icon"><use href="#i-sun"/></svg><svg class="moon-icon"><use href="#i-moon"/></svg></button>
+      <div class="auth-form-wrap register-wrap owner-register-wrap">
+        <div class="auth-logo-mobile"><span class="sage-native-brand auth-native-brand mobile"><span class="sage-mark"><i></i></span><span class="sage-wordmark"><b>S</b><b class="sage-a" aria-hidden="true">Λ</b><b>G</b><b>E</b><small>SAGE</small></span></span></div>
+        <div class="registration-heading"><div><span class="auth-kicker">OWNER REGISTRATION</span><h2>Create your SAGE workspace</h2><p>First choose whether SAGE is managing an organization or your own individual business.</p></div><span class="secure-chip"><svg><use href="#i-shield"/></svg>Secure setup</span></div>
+
+        <div class="register-steps four-step" id="registerSteps"><button type="button" class="active" data-step-nav="1"><span>1</span>Owner</button><i></i><button type="button" data-step-nav="2"><span>2</span>Workspace</button><i></i><button type="button" data-step-nav="3"><span>3</span>Business</button><i></i><button type="button" data-step-nav="4"><span>4</span><b data-final-step-label>Structure</b></button></div>
+
+        <form id="registerForm" class="auth-form multi-step-form">
+          <section class="register-step active" data-step="1">
+            <div class="step-title"><strong>Owner information</strong><small>Your secure owner profile. SAGE captures timestamps and account metadata automatically.</small></div>
+            <div class="form-grid three"><label>First name<input name="first_name" required autocomplete="given-name"></label><label>Middle name<input name="middle_name" autocomplete="additional-name"></label><label>Last name<input name="last_name" required autocomplete="family-name"></label></div>
+            <div class="form-grid three"><label>Sex<select name="sex"><option value="">Select</option><option>Male</option><option>Female</option><option>Prefer not to say</option></select></label><label>Date of birth<input name="date_of_birth" type="date"></label><label>Phone number<input name="phone" type="tel" placeholder="+234..."></label></div>
+            <label>Residential address<input name="address" placeholder="Optional owner address"></label>
+            <div class="form-grid two"><label>Email address<input name="email" type="email" placeholder="owner@company.com" required autocomplete="email"></label><label>Create password<div class="password-field"><input name="password" type="password" minlength="8" required autocomplete="new-password"><button type="button" class="icon-button compact" data-toggle-password><svg><use href="#i-eye"/></svg></button></div></label></div>
+            <div class="step-actions"><span></span><button type="button" class="btn primary" data-next-step>Continue <svg><use href="#i-arrow-up"/></svg></button></div>
+          </section>
+
+          <section class="register-step" data-step="2">
+            <div class="step-title"><strong>How will you use SAGE?</strong><small>This choice changes the dashboard, navigation, onboarding and daily workflow. You are not forced into a department structure if you are a sole business owner.</small></div>
+            <div class="workspace-mode-grid">
+              <label class="workspace-mode-card selected"><input type="radio" name="workspace_mode" value="organization" checked><span class="workspace-mode-icon"><svg><use href="#i-building"/></svg></span><div><strong>Organization / Company</strong><small>For schools, hospitals, companies, NGOs and businesses with multiple departments or teams.</small><em>Auto-create department structure</em></div><span class="workspace-mode-check"><svg><use href="#i-check"/></svg></span></label>
+              <label class="workspace-mode-card"><input type="radio" name="workspace_mode" value="individual"><span class="workspace-mode-icon"><svg><use href="#i-users"/></svg></span><div><strong>Individual / Entrepreneur</strong><small>For a sole trader, freelancer or small owner-operated business with no departments required.</small><em>Simple owner business workspace</em></div><span class="workspace-mode-check"><svg><use href="#i-check"/></svg></span></label>
+            </div>
+            <div class="workspace-mode-note"><svg><use href="#i-sparkles"/></svg><span><strong>SAGE adapts instead of making you adapt.</strong><small>You can still invite staff later in either workspace type.</small></span></div>
+            <div class="step-actions"><button type="button" class="btn secondary" data-prev-step>Back</button><button type="button" class="btn primary" data-next-step>Continue <svg><use href="#i-arrow-up"/></svg></button></div>
+          </section>
+
+          <section class="register-step" data-step="3">
+            <div class="step-title"><strong data-business-step-title>Organization information</strong><small data-business-step-copy>Your business type determines SAGE's suggested departments and operational catalogue.</small></div>
+            <label><span data-business-name-label>Organization / Business name</span><input name="organization_name" placeholder="e.g. Acme Holdings Ltd" required></label>
+            <div class="form-grid two"><label class="workspace-organization-only" data-organization-business-type>Business / Company type<select name="business_type" id="businessType">{% for item in business_types %}<option value="{{ item.key }}">{{ item.label }}</option>{% endfor %}</select></label><label class="workspace-individual-only" data-individual-business-type hidden>What kind of business do you run?<select name="individual_business_type" id="individualBusinessType">{% for item in individual_business_types %}<option value="{{ item.key }}">{{ item.label }}</option>{% endfor %}</select></label><label>Country<input name="country" value="Nigeria" required></label></div>
+            <div class="form-grid three"><label>State / Region<input name="state" placeholder="e.g. FCT Abuja"></label><label>Currency<select name="currency"><option value="NGN">NGN · Nigerian Naira</option><option value="USD">USD · US Dollar</option><option value="GBP">GBP · Pound Sterling</option><option value="EUR">EUR · Euro</option></select></label><label class="workspace-organization-only" data-branch-field>Branches<input name="branch_count" type="number" min="1" value="1"></label></div>
+            <div class="form-grid two"><label class="workspace-organization-only" data-size-field>Organization size<select name="employee_range"><option value="1-10">1–10 staff</option><option value="11-50">11–50 staff</option><option value="51-200">51–200 staff</option><option value="201-500">201–500 staff</option><option value="500+">500+ staff</option></select></label><label>Business address<input name="organization_address" placeholder="Primary business location"></label></div>
+            <div class="step-actions"><button type="button" class="btn secondary" data-prev-step>Back</button><button type="button" class="btn primary" data-next-step><span data-structure-button-label>Choose departments</span> <svg><use href="#i-arrow-up"/></svg></button></div>
+          </section>
+
+          <section class="register-step" data-step="4">
+            <div data-organization-structure>
+              <div class="step-title"><strong>Suggested departments</strong><small>SAGE selected the standard departments for your organization type. Keep all, remove any you do not use, or add custom departments before creating the workspace.</small></div>
+              <div class="department-selection-toolbar"><div><strong id="departmentSelectionSummary">Departments selected</strong><small id="departmentTemplateSummary">Loading organization template...</small></div><div class="department-selection-actions"><button type="button" class="mini-action" id="selectAllDepartments">Select all</button><button type="button" class="mini-action" id="clearAllDepartments">Clear all</button></div></div>
+              <div class="department-selector" id="departmentSelector"></div>
+              <div class="custom-department-add"><input id="customDepartmentInput" placeholder="Add another department e.g. Mechanical Workshop"><button type="button" class="btn secondary" id="addCustomDepartment"><svg><use href="#i-plus"/></svg>Add custom</button></div>
+            </div>
+            <div class="individual-setup-card" data-individual-structure hidden><span class="individual-setup-icon"><svg><use href="#i-briefcase"/></svg></span><div><span class="auth-kicker">LEAN BUSINESS WORKSPACE</span><h3>Your business does not need departments.</h3><p>SAGE will create one private operating area for your business and give you direct access to Income, Expenses, Profit/Loss, Cash Flow, Inventory, Assets, Receivables, Payables, Reports and AI. If you employ staff later, you can invite them without rebuilding the workspace.</p><div class="individual-feature-grid"><span><svg><use href="#i-wallet"/></svg>Income & expenses</span><span><svg><use href="#i-analytics"/></svg>Daily / weekly / monthly profit</span><span><svg><use href="#i-inventory"/></svg>Stock & inventory</span><span><svg><use href="#i-assets"/></svg>Assets & equipment</span><span><svg><use href="#i-reports"/></svg>Business reports</span><span><svg><use href="#i-users"/></svg>Optional staff later</span></div></div></div>
+            <label class="check-row terms"><input id="termsCheck" type="checkbox" checked required> <span data-terms-label>I confirm that I am authorized to create this SAGE workspace.</span></label>
+            <div class="form-message" id="registerMessage"></div>
+            <div class="step-actions"><button type="button" class="btn secondary" data-prev-step>Back</button><button type="submit" class="btn primary auth-submit-inline"><svg><use href="#i-check"/></svg>Create SAGE workspace</button></div>
+          </section>
+        </form>
+        <div class="auth-switch">Already registered? <a href="/login">Sign in</a> <span class="auth-divider-dot">•</span> <a href="/platform-admin/login" target="_blank" rel="noopener">Platform Admin ↗</a></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="launch-overlay" id="registrationSuccess" aria-hidden="true"><div class="launch-scene"><div class="vision-orbit"><span class="orbit-core"><span></span></span><i class="orbit-ring one"><b></b></i><i class="orbit-ring two"><b></b></i><i class="orbit-ring three"><b></b></i></div><span class="launch-kicker">SAGE IS GETTING READY</span><h2 id="launchTitle">Building your workspace</h2><p id="launchStatus">Creating secure owner access...</p><div class="launch-progress"><span></span></div></div></div>
+
+  <script>window.SAGE_BUSINESS_TYPES = {{ business_types|tojson }}; window.SAGE_INDIVIDUAL_BUSINESS_TYPES = {{ individual_business_types|tojson }};</script>
+  <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#050505">
+  <title>{{ page_title }} · SAGE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="{{ url_for('static', filename='css/vision.css') }}">
+</head>
+<body data-page="{{ page }}" data-user-role="{{ current_user.role }}" data-workspace-mode="{{ workspace_mode }}">
+  {% include 'partials/icon_sprite.html' %}
+  <div class="page-progress" id="pageProgress"></div><div class="mobile-backdrop" id="mobileBackdrop"></div>
+
+  <!-- ====================================================== -->
+  <!-- PERSISTENT SIDEBAR                                    -->
+  <!-- ====================================================== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand"><a href="/dashboard" data-route="dashboard" class="brand-link sage-brand-link" aria-label="SAGE dashboard"><span class="sage-mark"><i></i></span><span class="sage-wordmark" aria-label="SAGE"><b>S</b><b class="sage-a" aria-hidden="true">Λ</b><b>G</b><b>E</b><small>SAGE</small></span></a><button class="icon-button sidebar-close-mobile" id="mobileClose" aria-label="Close menu"><svg><use href="#i-x"/></svg></button></div>
+    <nav class="sidebar-nav" aria-label="Primary navigation">
+      {% for section in nav_items %}<div class="nav-section"><div class="nav-section-label"><span>{{ section.section }}</span><svg><use href="#i-chevron-down"/></svg></div><div class="nav-group">{% for item in section["items"] %}<a class="nav-link {% if page == item.page %}active{% endif %}" href="/{{ item.page }}" data-route="{{ item.page }}" data-label="{{ item.label }}"><svg class="nav-icon"><use href="#i-{{ item.icon }}"/></svg><span class="nav-label">{{ item.label }}</span>{% if item.badge %}<span class="nav-badge">{{ item.badge }}</span>{% endif %}</a>{% endfor %}</div></div>{% endfor %}
+    </nav>
+    <div class="sidebar-account"><div class="account-avatar">{{ current_user.initials }}</div><div class="account-copy"><strong>{{ current_user.display_name }}</strong><span>{{ current_user.position or current_user.role_label }}{% if current_user.department %} · {{ current_user.department.name }}{% endif %}</span></div><a class="icon-button compact" href="/logout" aria-label="Log out"><svg><use href="#i-logout"/></svg></a></div>
+  </aside>
+
+  <!-- ====================================================== -->
+  <!-- PERSISTENT TOP BAR                                    -->
+  <!-- ====================================================== -->
+  <header class="topbar">
+    <div class="topbar-left"><button class="navigation-toggle mobile-menu" id="mobileMenu" aria-label="Open navigation" title="Open navigation"><svg><use href="#i-menu"/></svg></button><button class="navigation-toggle desktop-nav-toggle sidebar-collapse" id="sidebarCollapse" aria-label="Toggle sidebar" title="Toggle sidebar"><svg><use href="#i-chevron-left"/></svg></button><button class="command-search" id="commandOpen" aria-label="Search anything"><svg><use href="#i-search"/></svg><span>Search anything...</span><kbd>⌘K</kbd></button></div>
+    <div class="topbar-actions">
+      <button class="ai-topbar-btn" id="aiOpen"><svg><use href="#i-sparkles"/></svg><span>SAGE AI</span></button>
+      {% if current_user.role == "owner" %}<a class="new-request-btn owner-quick-record" href="/finance" data-route="finance"><svg><use href="#i-plus"/></svg><span>Quick Record</span></a>{% else %}<button class="new-request-btn" id="newRequestOpen"><svg><use href="#i-plus"/></svg><span>Quick Add</span></button>{% endif %}
+      <span class="action-separator"></span><button class="guide-control" id="sageGuideToggle" type="button" aria-label="Open SAGE Guide" aria-expanded="false"><svg><use href="#i-info"/></svg><span>Guide</span></button><div class="theme-switcher"><button class="theme-control" id="themeToggle" aria-label="Choose SAGE theme" aria-expanded="false"><svg><use href="#i-palette"/></svg><span id="themeLabel">Theme</span><svg class="theme-chevron"><use href="#i-chevron-down"/></svg></button><div class="theme-menu" id="themeMenu" aria-hidden="true"><div class="theme-menu-head"><strong>Appearance</strong><small>Choose a calm SAGE workspace theme</small></div><div class="theme-options"><button data-theme-choice="dark"><i class="theme-dot dark"></i><span>Dark</span><small>Midnight</small></button><button data-theme-choice="light"><i class="theme-dot light"></i><span>Light</span><small>Clean</small></button><button data-theme-choice="sky"><i class="theme-dot sky"></i><span>Sky Blue</span><small>Airy</small></button><button data-theme-choice="sage"><i class="theme-dot sage"></i><span>Sage Green</span><small>Calm</small></button><button data-theme-choice="sand"><i class="theme-dot sand"></i><span>Warm Sand</span><small>Soft</small></button><button data-theme-choice="slate"><i class="theme-dot slate"></i><span>Slate</span><small>Focused</small></button></div></div></div><button class="icon-button accent-button" id="accentToggle" aria-label="Change accent color" title="Change accent"><svg><use href="#i-sparkles"/></svg></button><button class="icon-button notification-button" id="notificationToggle" aria-label="Notifications"><svg><use href="#i-bell"/></svg><span class="notification-dot" id="notificationDot" {% if not unread_notifications %}hidden{% endif %}></span><span class="notification-count" id="notificationCount" {% if not unread_notifications %}hidden{% endif %}>{{ unread_notifications }}</span></button><button class="top-avatar" aria-label="Account">{{ current_user.initials }}</button>
+    </div>
+  </header>
+
+  <div class="guide-page-toggle" id="sageGuidePageToggle" aria-label="SAGE Guide status"><svg><use href="#i-info"/></svg><span>Guide</span><button type="button" id="sageGuidePageSwitch" aria-pressed="true"><i></i><b id="sageGuidePageLabel">On</b></button></div><button class="mobile-guide-launch" id="sageMobileGuideLaunch" type="button" aria-label="Open SAGE Guide"><svg><use href="#i-info"/></svg><span>Guide</span></button><main class="main-content" id="appContent" tabindex="-1">{% include 'pages/' ~ page ~ '.html' %}</main>
+
+  <!-- ====================================================== -->
+  <!-- FLOATING QUICK ACTIONS                                 -->
+  <!-- ====================================================== -->
+  <div class="floating-actions"><button class="floating-action ai-floating" id="floatingAI"><svg><use href="#i-sparkles"/></svg><span>Ask AI</span></button>{% if current_user.role == "owner" %}<a class="floating-action" href="/finance" data-route="finance"><span class="floating-dot">•••</span><span>Quick Record</span></a>{% else %}<button class="floating-action" id="floatingQuick"><span class="floating-dot">•••</span><span>Quick Add</span></button>{% endif %}</div>
+
+{% if current_user.role != "owner" %}
+  <!-- ====================================================== -->
+  <!-- QUICK REQUEST / PROCUREMENT MODAL                     -->
+  <!-- ====================================================== -->
+  <div class="modal-backdrop" id="requestModal" aria-hidden="true"><div class="modal-card request-modal-card" role="dialog" aria-modal="true" aria-labelledby="requestModalTitle">
+    <div class="modal-head"><div><h3 id="requestModalTitle">Create Request</h3><p>Request an item/service, save a draft or submit it for owner/finance approval.</p></div><button class="icon-button" data-close-modal="requestModal"><svg><use href="#i-x"/></svg></button></div>
+    <form class="modal-form" id="requestForm">
+      <div class="form-grid two"><label>Request / item name<input name="item_name" list="requestItemNames" required placeholder="e.g. Pack of tissue"><datalist id="requestItemNames">{% for item in request_catalog_items %}<option value="{{ item.name }}">{{ item.category }}</option>{% endfor %}</datalist></label><label>Department<select name="department_id" {% if not owner_admin %}disabled{% endif %}>{% if owner_admin %}{% for dept in departments %}<option value="{{ dept.id }}">{{ dept.name }}</option>{% endfor %}{% elif current_user.department %}<option value="{{ current_user.department.id }}">{{ current_user.department.name }}</option>{% else %}<option value="">Unassigned</option>{% endif %}</select></label></div>
+      <div class="form-grid four request-money-grid"><label>Quantity<input name="quantity" type="number" min="0.001" step="0.001" value="1" required></label><label>Unit<input name="unit" value="unit" placeholder="pack / litre / piece"></label><label>Unit cost<input name="unit_cost" type="number" min="0" step="0.01" placeholder="10000" required></label><label>Total<input name="estimated_total_display" data-request-total readonly placeholder="0.00"></label></div>
+      <div class="form-grid two"><label>Category<input name="category" list="requestCategories" placeholder="Office supplies / Reagent / Fuel"><datalist id="requestCategories">{% for item in request_catalog_items %}<option value="{{ item.category or item.name }}">{% endfor %}</datalist></label><label>Urgency<select name="urgency"><option value="normal">Normal</option><option value="urgent">Urgent</option><option value="critical">Critical</option></select></label></div>
+      <label>Purpose / justification<textarea name="purpose" rows="3" placeholder="Why is this required and what will it be used for?"></textarea></label>
+      <div class="request-flow-hint"><span>1</span> Submit request <b>→</b><span>2</span> Approve <b>→</b><span>3</span> Money Sent <b>→</b><span>4</span> Purchase + receipt <b>→</b><span>5</span> Final record</div>
+      <div class="form-message" data-request-message></div><div class="modal-actions"><button type="button" class="btn secondary" data-request-draft>Save Draft</button><button type="button" class="btn secondary" data-close-modal="requestModal">Cancel</button><button type="submit" class="btn primary">Submit Request</button></div>
+    </form>
+  </div></div>
+
+{% endif %}
+
+  <!-- ====================================================== -->
+  <!-- SAGE PULSE — LIVE ALERTS + LOGIN DAILY BRIEF         -->
+  <!-- One compact edge card is shared by real-time SSE alerts and the once-per-login business briefing. -->
+  <!-- ====================================================== -->
+  <div class="sage-live-notification-host" id="sageLiveNotificationHost" aria-live="polite" aria-atomic="true"><article class="sage-live-notification" id="sageLiveNotification" data-mode="live" role="status"><span class="sage-live-icon" id="sageLiveIcon"><svg><use href="#i-bell"/></svg></span><div class="sage-live-body"><div class="sage-live-top"><b id="sageLiveType">LIVE ACTIVITY</b><small id="sageLiveTime"></small></div><strong class="sage-live-title" id="sageLiveTitle"></strong><p id="sageLiveMessage"></p><strong class="sage-live-metric" id="sageLiveMetric" hidden></strong><div class="sage-live-brief-meta" id="sageLiveBriefMeta" hidden><span id="sageLiveScope"></span><span id="sageLivePosition"></span></div><div class="sage-live-actions" id="sageLiveActions" hidden><button type="button" class="sage-live-open" id="sageLiveOpen">Open section</button><span><button type="button" id="sageLivePrev" aria-label="Previous briefing item">‹</button><button type="button" id="sageLiveNext" aria-label="Next briefing item">›</button></span></div></div><button type="button" class="sage-live-close" id="sageLiveClose" aria-label="Dismiss SAGE update">×</button><i class="sage-live-progress" id="sageLiveProgress"></i></article></div>
+
+  <!-- ====================================================== -->
+  <!-- LIVE NOTIFICATION CENTRE                              -->
+  <!-- ====================================================== -->
+  <aside class="notification-tray" id="notificationTray" aria-hidden="true"><div class="notification-head"><div><span>LIVE TRACKING</span><strong>Notifications</strong></div><button class="text-button" id="markNotificationsRead">Mark all read</button></div><div class="notification-list" id="notificationList">{% for note in notifications %}<article class="notification-item {{ note.level }} {% if not note.is_read %}unread{% endif %}"><span class="notification-item-icon"><svg><use href="#i-bell"/></svg></span><div><strong>{{ note.title }}</strong><p>{{ note.message }}</p><small>{{ note.created_at.strftime('%d %b · %H:%M') }}</small></div></article>{% else %}<div class="empty-notifications">No notifications yet.</div>{% endfor %}</div></aside>
+
+  <!-- ====================================================== -->
+  <!-- SEARCH / COMMAND PALETTE                               -->
+  <!-- ====================================================== -->
+  <div class="command-backdrop" id="commandPalette" aria-hidden="true"><div class="command-card" role="dialog" aria-modal="true" aria-label="Command palette"><div class="command-input"><svg><use href="#i-search"/></svg><input id="commandInput" autocomplete="off" placeholder="Search pages and actions..."><kbd>ESC</kbd></div><div class="command-list" id="commandList">{% for section in nav_items %}{% for item in section["items"] %}<button class="command-item" data-command-route="{{ item.page }}" data-command-text="{{ item.label|lower }} {{ section.section|lower }}"><svg><use href="#i-{{ item.icon }}"/></svg><span><strong>{{ item.label }}</strong><small>{{ section.section|title }}</small></span><kbd>↵</kbd></button>{% endfor %}{% endfor %}</div></div></div>
+
+  <!-- ====================================================== -->
+  <!-- SAGE AI DRAWER                                       -->
+  <!-- ====================================================== -->
+  <div class="ai-backdrop" id="aiBackdrop"></div>
+  <aside class="ai-drawer" id="aiDrawer" aria-hidden="true">
+    <div class="ai-drawer-head"><div class="ai-brand-orb"><svg><use href="#i-sparkles"/></svg></div><div><span>SAGE AI</span><strong>Your business operations copilot</strong></div><button class="icon-button" id="aiClose"><svg><use href="#i-x"/></svg></button></div>
+    <div class="ai-scope"><svg><use href="#i-shield"/></svg><span><strong>{{ current_user.role_label }} access</strong><small>{% if owner_admin %}Organization-wide scope{% elif current_user.department %}Scoped to {{ current_user.department.name }}{% else %}Restricted workspace scope{% endif %}</small></span></div>
+    <div class="ai-messages" id="aiMessages"><div class="ai-message assistant"><span class="ai-avatar"><svg><use href="#i-sparkles"/></svg></span><div><p>Hi {{ current_user.first_name }}. Ask me about live finance, requests, stock, budgets, reports, exceptions or your department activity.</p><small>SAGE AI · permission aware</small></div></div></div>
+    <div class="ai-prompts" id="aiPrompts"><button data-ai-prompt="Summarize our current financial position and the most important exceptions.">Executive summary</button><button data-ai-prompt="Which departments are spending the most and what should I review?">Department spend</button><button data-ai-prompt="What requests, low stock, receivables or payables need attention?">What needs attention?</button></div>
+    <form class="ai-composer" id="aiForm"><textarea id="aiInput" rows="1" placeholder="Ask SAGE AI..." maxlength="4000"></textarea><button type="submit" aria-label="Send"><svg><use href="#i-send"/></svg></button></form>
+    <div class="ai-footnote">AI respects your SAGE role. Live finance, requests, inventory, budgets, reports and accountability intelligence are connected. AI never bypasses your SAGE permissions.</div>
+  </aside>
+
+  <!-- ====================================================== -->
+  <!-- SAGE GUIDE / CONTEXTUAL HELP                          -->
+  <!-- Hover hints explain navigation and major sections on desktop; the Guide drawer is the mobile/accessibility fallback. -->
+  <!-- ====================================================== -->
+  <div class="sage-context-hint" id="sageContextHint" role="tooltip" aria-hidden="true"><span class="sage-context-icon"><svg><use href="#i-info"/></svg></span><div><small>SAGE GUIDE</small><strong id="sageContextTitle">What this does</strong><p id="sageContextCopy"></p></div></div>
+  <div class="guide-backdrop" id="sageGuideBackdrop" aria-hidden="true"></div>
+  <aside class="sage-guide-drawer" id="sageGuideDrawer" aria-hidden="true"><div class="sage-guide-head"><div><span>SAGE GUIDE</span><strong id="sageGuidePageTitle">Dashboard</strong><p id="sageGuidePageCopy">Understand this page and the most useful actions available to you.</p></div><button class="icon-button" id="sageGuideClose" aria-label="Close SAGE Guide"><svg><use href="#i-x"/></svg></button></div><div class="sage-guide-body"><section class="sage-guide-card primary"><span class="guide-card-icon"><svg><use href="#i-sparkles"/></svg></span><div><small>WHAT CAN I DO HERE?</small><strong id="sageGuidePrimaryTitle">Current page</strong><p id="sageGuidePrimaryCopy"></p></div></section><section class="sage-guide-section"><div class="sage-guide-section-head"><strong>Quick orientation</strong><small>Hover any highlighted area on desktop for a short explanation.</small></div><div class="sage-guide-links" id="sageGuideLinks"></div></section><section class="sage-guide-settings"><label><span><strong>Context hints</strong><small>Show explanations when you hover page sections.</small></span><input type="checkbox" id="sageGuideHintsToggle" checked></label><button type="button" class="btn secondary" id="sageBriefingReplay"><svg><use href="#i-clock"/></svg>Replay today's briefing</button><small class="guide-mobile-note">On mobile, use the floating Guide button anytime for page explanations and quick orientation.</small><small class="guide-shortcut">Tip: press <kbd>?</kbd> anywhere in SAGE to open this guide.</small></section></div></aside>
+
+  <!-- ====================================================== -->
+  <!-- DAILY BRIEFING                                        -->
+  <!-- Rendered inside the compact SAGE Pulse edge card above so the workspace remains usable while the recap cycles. -->
+  <!-- ====================================================== -->
+
+  <div class="toast-stack" id="toastStack"></div>
+  <script>window.SAGE_INITIAL_PAGE = {{ page|tojson }}; window.SAGE_USER = {{ {"name": current_user.display_name, "role": current_user.role, "department": current_user.department.name if current_user.department else None, "currency": current_user.organization.currency, "workspace_mode": workspace_mode}|tojson }}; window.SAGE_BOOT_BRIEFING = {{ (boot_briefing or {})|tojson }};</script>
+  <script src="{{ url_for('static', filename='js/vision.js') }}"></script>
+</body>
+</html>

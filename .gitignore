@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+.env
+vision_dev.db
+instance/
+.DS_Store

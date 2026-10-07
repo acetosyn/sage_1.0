@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#07090f"><title>Staff registration · SAGE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="{{ url_for('static', filename='css/vision.css') }}">
+</head>
+<body class="auth-body">
+  {% include 'partials/icon_sprite.html' %}
+  <div class="staff-auth-shell">
+    <button class="icon-button auth-theme" id="authTheme"><svg class="sun-icon"><use href="#i-sun"/></svg><svg class="moon-icon"><use href="#i-moon"/></svg></button>
+    <div class="staff-register-card">
+      <div class="auth-logo-mobile visible-logo"><span class="sage-native-brand auth-native-brand mobile"><span class="sage-mark"><i></i></span><span class="sage-wordmark"><b>S</b><b class="sage-a" aria-hidden="true">Λ</b><b>G</b><b>E</b><small>SAGE</small></span></span></div>
+      {% if invitation %}
+      <span class="auth-kicker">STAFF INVITATION</span><h1>Join {{ invitation.organization.name }}</h1><p>Your organization has already assigned your department and access role. Complete your personal profile once to activate the account.</p>
+      <div class="invite-summary"><div><span>Department</span><strong>{{ invitation.department.name if invitation.department else 'Not assigned' }}</strong></div><div><span>Role</span><strong>{{ invitation.role|replace('_',' ')|title }}</strong></div><div><span>Email</span><strong>{{ invitation.email }}</strong></div></div>
+      <form id="staffRegisterForm" class="auth-form" data-token="{{ invitation.token }}">
+        <div class="form-grid three"><label>First name<input name="first_name" value="{{ invitation.first_name or '' }}" required></label><label>Middle name<input name="middle_name"></label><label>Last name<input name="last_name" value="{{ invitation.last_name or '' }}" required></label></div>
+        <div class="form-grid three"><label>Sex<select name="sex"><option value="">Select</option><option>Male</option><option>Female</option><option>Prefer not to say</option></select></label><label>Date of birth<input name="date_of_birth" type="date"></label><label>Phone<input name="phone" type="tel"></label></div>
+        <div class="form-grid two"><label>Position / Job title<input name="position" placeholder="e.g. Accounts Officer"></label><label>Employee ID<input name="employee_id" placeholder="Optional"></label></div>
+        <label>Address<input name="address"></label><label>Create password<div class="password-field"><input name="password" type="password" minlength="8" required><button type="button" class="icon-button compact" data-toggle-password><svg><use href="#i-eye"/></svg></button></div></label>
+        <div class="form-message" id="staffRegisterMessage"></div><button class="btn primary auth-submit" type="submit">Activate staff account</button>
+      </form>
+      {% else %}
+      <span class="auth-kicker">INVITATION EXPIRED</span><h1>This registration link cannot be used</h1><p>Ask your organization owner or admin to create a fresh staff invitation from SAGE.</p><a class="btn primary auth-submit" href="/login">Go to sign in</a>
+      {% endif %}
+    </div>
+  </div>
+  <div class="launch-overlay" id="registrationSuccess" aria-hidden="true"><div class="launch-scene"><div class="vision-orbit"><span class="orbit-core"><span></span></span><i class="orbit-ring one"><b></b></i><i class="orbit-ring two"><b></b></i></div><span class="launch-kicker">ACCOUNT ACTIVATED</span><h2>Opening your department workspace</h2><p id="launchStatus">Applying your role and access permissions...</p><div class="launch-progress"><span></span></div></div></div>
+  <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+</body>
+</html>

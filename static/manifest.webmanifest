@@ -1,0 +1,10 @@
+{
+  "name": "SAGE Business OS",
+  "short_name": "SAGE",
+  "description": "Business operations, finance, inventory, procurement, assets and accountability.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#2457ff",
+  "icons": []
+}

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#05070c">
+  <title>SAGE Platform Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/vision.css') }}">
+</head>
+<body class="platform-admin-body">
+  <main class="platform-login-shell">
+    <section class="platform-login-brand"><div class="sage-native-brand platform-native-brand large"><span class="sage-mark"><i></i></span><span class="sage-wordmark"><b>S</b><b class="sage-a" aria-hidden="true">Λ</b><b>G</b><b>E</b><small>SAGE</small></span></div><span>PLATFORM CONTROL</span><h1>Developer administration</h1><p>Manage independent SAGE organization workspaces, access status, subscriptions and live activity.</p></section>
+    <section class="platform-login-card"><span class="auth-kicker">RESTRICTED AREA</span><h2>Platform administrator</h2><p>This login is separate from organization owner and staff accounts.</p>{% if not configured %}<div class="platform-warning">Add <b>SAGE_ADMIN_USERNAME</b> and <b>SAGE_ADMIN_PASSWORD</b> to your .env file before using this area.</div>{% endif %}<form id="platformLoginForm" class="auth-form"><label>Username<input name="username" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><div class="form-message" id="platformLoginMessage"></div><button class="btn primary auth-submit" type="submit">Open platform console</button></form><a class="platform-back-link" href="/login">← Back to SAGE sign in</a></section>
+  </main>
+  <script src="{{ url_for('static', filename='js/platform_admin.js') }}"></script>
+</body>
+</html>
