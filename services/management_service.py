@@ -3,8 +3,9 @@
 
 from datetime import datetime, timezone
 from sqlalchemy import func
+from core.datetime_utils import as_utc
 from packages.database import db
-from models import BudgetAllocation, Department, FinanceAccount, FinanceLedgerEntry, FinancePayable, FinanceReceivable, FinancialRecord, InventoryItem, PurchaseFulfillment, PurchaseRequest, RequestFunding
+from models import ApprovalRule, BudgetAllocation, Department, FinanceAccount, FinanceLedgerEntry, FinancePayable, FinanceReceivable, FinancialRecord, InventoryItem, PurchaseFulfillment, PurchaseRequest, RequestFunding
 
 INFLOW_TYPES = {"income", "revenue"}; OUTFLOW_TYPES = {"expense", "expenditure", "operating_cost", "payroll", "tax"}
 
@@ -17,7 +18,7 @@ def _account_balance(account):
 
 def executive_dashboard_context(user):
     """Organization-owner dashboard requested by management; zero/empty values are returned when real records do not exist."""
-    org = user.organization_id; now = datetime.now(timezone.utc); today_start = now.replace(hour=0, minute=0, second=0, microsecond=0); financial = FinancialRecord.query.filter_by(organization_id=org, status="posted").all(); today_rows = [row for row in financial if row.occurred_at and row.occurred_at >= today_start]
+    org = user.organization_id; now = datetime.now(timezone.utc); today_start = now.replace(hour=0, minute=0, second=0, microsecond=0); financial = FinancialRecord.query.filter_by(organization_id=org, status="posted").all(); today_rows = [row for row in financial if row.occurred_at and as_utc(row.occurred_at) >= today_start]
     today_income = sum(_money(row.amount) for row in today_rows if str(row.record_type or "").lower() in INFLOW_TYPES); today_expenses = sum(_money(row.amount) for row in today_rows if str(row.record_type or "").lower() in OUTFLOW_TYPES)
     accounts = FinanceAccount.query.filter_by(organization_id=org, is_active=True).all(); available_cash = sum(_account_balance(row) for row in accounts)
     pending_approvals = PurchaseRequest.query.filter_by(organization_id=org, status="submitted").count(); new_requests = PurchaseRequest.query.filter(PurchaseRequest.organization_id == org, PurchaseRequest.created_at >= today_start).count()
@@ -33,7 +34,7 @@ def executive_dashboard_context(user):
         dept_budgets = [row for row in budgets if row.department_id == department.id]; allocation = sum(row.total_budget for row in dept_budgets); committed = sum(_money(row.committed_amount) for row in dept_budgets); budget_actual = sum(_money(row.actual_spend) for row in dept_budgets); remaining = allocation - committed - budget_actual; used_percent = ((committed + budget_actual) / allocation * 100.0) if allocation else 0.0
         department_rows.append({"id": department.id, "name": department.name, "income": dept_income, "expenses": dept_expenses, "requests": len(dept_requests), "pending": sum(1 for row in dept_requests if row.status == "submitted"), "approved_amount": _money(approved), "actual_spent": _money(actual), "budget": allocation, "committed": committed, "budget_actual": budget_actual, "remaining_budget": remaining, "budget_usage": used_percent, "net": dept_income - dept_expenses, "recent_requests": dept_requests[:3]})
 
-    today = now.date(); overdue_payables = [row for row in payables if row.due_date and row.due_date < today and row.balance > 0]; missing_receipt = PurchaseRequest.query.filter(PurchaseRequest.organization_id == org, PurchaseRequest.status.in_(["money_sent", "approved"])).count(); unverified = PurchaseFulfillment.query.filter(PurchaseFulfillment.organization_id == org, PurchaseFulfillment.confirmed_at.isnot(None), PurchaseFulfillment.verified_at.is_(None)).count(); unreconciled = FinanceLedgerEntry.query.filter(FinanceLedgerEntry.organization_id == org, FinanceLedgerEntry.account_id.isnot(None), FinanceLedgerEntry.status == "posted").count()
+    today = now.date(); overdue_payables = [row for row in payables if row.due_date and row.due_date < today and row.balance > 0]; missing_receipt = PurchaseRequest.query.filter(PurchaseRequest.organization_id == org, PurchaseRequest.status.in_(["money_sent", "approved"])).count(); unverified = PurchaseFulfillment.query.filter(PurchaseFulfillment.organization_id == org, PurchaseFulfillment.confirmed_at.isnot(None), PurchaseFulfillment.verified_at.is_(None)).count(); unreconciled = FinanceLedgerEntry.query.filter(FinanceLedgerEntry.organization_id == org, FinanceLedgerEntry.account_id.isnot(None), FinanceLedgerEntry.status == "posted", FinanceLedgerEntry.direction.in_(["in", "out"])).count()
     attention = []
     def add(rank, title, detail, route, metric=None): attention.append({"rank": rank, "priority": _priority(rank), "title": title, "detail": detail, "route": route, "metric": metric})
     if pending_approvals: add(3, "Pending approvals", f"{pending_approvals} request(s) are waiting for a management decision.", "requests", str(pending_approvals))
@@ -48,7 +49,7 @@ def executive_dashboard_context(user):
     for alert in management_anomaly_context(user)["alerts"][:4]: add(alert["rank"], alert["title"], alert["detail"], alert["route"], alert.get("metric"))
     attention.sort(key=lambda item: item["rank"], reverse=True)
 
-    return {"currency": user.organization.currency, "today": {"income": today_income, "expenses": today_expenses, "net": today_income - today_expenses, "available_cash": available_cash, "pending_approvals": pending_approvals, "new_requests": new_requests, "outstanding_payments": payable_total}, "executive": {"income": all_income, "expenses": all_expenses, "net": all_income - all_expenses, "receivables": receivable_total, "payables": payable_total, "inventory_value": inventory_value, "pending_approvals": pending_approvals, "budget_usage": budget_usage}, "departments": department_rows, "attention": attention, "attention_count": len(attention), "low_stock_count": len(low_stock), "account_count": len(accounts)}
+    return {"currency": user.organization.currency, "today": {"income": today_income, "expenses": today_expenses, "net": today_income - today_expenses, "available_cash": available_cash, "pending_approvals": pending_approvals, "new_requests": new_requests, "outstanding_payments": payable_total}, "executive": {"income": all_income, "expenses": all_expenses, "net": all_income - all_expenses, "receivables": receivable_total, "payables": payable_total, "inventory_value": inventory_value, "pending_approvals": pending_approvals, "budget_usage": budget_usage}, "departments": department_rows, "attention": attention, "attention_count": len(attention), "low_stock_count": len(low_stock), "account_count": len(accounts), "budget_count": len(budgets)}
 
 # ==========================================================
 # CEO UPGRADE PHASE 2 — PROCUREMENT TRACEABILITY / SUPPLIERS
@@ -70,7 +71,7 @@ def procurement_management_context(user):
     from models import Attachment, FinancialRecord, FulfillmentLine, Supplier
     org = user.organization_id; requests = PurchaseRequest.query.filter_by(organization_id=org).order_by(PurchaseRequest.created_at.desc()).limit(100).all(); traces = []
     for row in requests:
-        fulfillment, funding = row.fulfillment, row.funding; receipt = Attachment.query.filter_by(organization_id=org, entity_type="fulfillment", entity_id=fulfillment.id if fulfillment else "", kind="receipts").order_by(Attachment.created_at.desc()).first() if fulfillment else None; payment = FinancialRecord.query.filter_by(organization_id=org, source_entity_id=fulfillment.id if fulfillment else "", status="posted").filter(FinancialRecord.record_type.in_(["expense", "expenditure"])).first() if fulfillment else None; delivered_at = max([line.delivered_at for line in fulfillment.lines if line.delivered_at], default=None) if fulfillment else None
+        fulfillment, funding = row.fulfillment, row.funding; receipt = Attachment.query.filter_by(organization_id=org, entity_type="fulfillment", entity_id=fulfillment.id if fulfillment else "", kind="receipts").order_by(Attachment.created_at.desc()).first() if fulfillment else None; payment = FinanceLedgerEntry.query.filter(FinanceLedgerEntry.organization_id == org, FinanceLedgerEntry.direction == "out", FinanceLedgerEntry.status.in_(["posted", "reconciled"]), FinanceLedgerEntry.source_entity_id.in_([row.id, funding.id if funding else "", fulfillment.id if fulfillment else ""])).first(); delivered_at = max([line.delivered_at for line in fulfillment.lines if line.delivered_at], key=as_utc, default=None) if fulfillment else None
         stages = [{"key":"request","label":"Request","done":True,"at":row.submitted_at or row.created_at},{"key":"approval","label":"Approval","done":bool(row.approved_at),"at":row.approved_at},{"key":"purchase","label":"Purchase","done":bool(fulfillment and fulfillment.confirmed_at),"at":fulfillment.confirmed_at if fulfillment else None},{"key":"receipt","label":"Receipt","done":bool(receipt),"at":receipt.created_at if receipt else None},{"key":"delivery","label":"Delivery","done":bool(delivered_at),"at":delivered_at},{"key":"verification","label":"Verification","done":bool(fulfillment and fulfillment.verified_at),"at":fulfillment.verified_at if fulfillment else None},{"key":"payment","label":"Payment","done":bool(payment or (funding and _money(funding.amount_sent) > 0)),"at":payment.occurred_at if payment else (funding.funded_at if funding else None)}]
         traces.append({"request":row,"fulfillment":fulfillment,"funding":funding,"receipt":receipt,"payment":payment,"delivered_at":delivered_at,"stages":stages,"approved_amount":_money(funding.approved_budget) if funding else _money(row.estimated_total),"actual_spent":_money(fulfillment.actual_total) if fulfillment else 0.0,"supplier":fulfillment.supplier_name if fulfillment else None,"requested_by":row.requester.display_name if row.requester else "Unknown","approved_by":row.approved_by.display_name if row.approved_by else "—","purchased_by":fulfillment.recorded_by.display_name if fulfillment and fulfillment.recorded_by else "—","received_by":(fulfillment.supplied_by if fulfillment and fulfillment.source_type == "received_from_other" and fulfillment.supplied_by else (fulfillment.recorded_by.display_name if fulfillment and fulfillment.recorded_by else "—")),"verified_by":fulfillment.verified_by.display_name if fulfillment and fulfillment.verified_by else "—"})
 
@@ -79,8 +80,8 @@ def procurement_management_context(user):
         master = supplier_master.get(normalized); purchases = [row for row in fulfillments if _normalized_supplier(row.supplier_name) == normalized]; obligations = [row for row in payables if _normalized_supplier(row.vendor_name) == normalized]; lines = [line for purchase in purchases for line in purchase.lines]; price_map = {}
         for line in lines:
             current = price_map.get(line.item_name)
-            if not current or (line.updated_at or line.created_at) >= current["at"]: price_map[line.item_name] = {"item":line.item_name,"price":_money(line.actual_unit_cost),"unit":line.unit,"at":line.updated_at or line.created_at}
-        suppliers.append({"id":master.id if master else None,"name":master.name if master else next((row.supplier_name for row in purchases if row.supplier_name), normalized.title()),"status":master.status if master else "historical","purchase_count":len(purchases),"total_spend":sum(_money(row.actual_total) for row in purchases),"outstanding":sum(row.balance for row in obligations),"last_purchase":purchases[0].confirmed_at if purchases else None,"prices":sorted(price_map.values(), key=lambda item:item["at"], reverse=True)[:4]})
+            if not current or as_utc(line.updated_at or line.created_at) >= as_utc(current["at"]): price_map[line.item_name] = {"item":line.item_name,"price":_money(line.actual_unit_cost),"unit":line.unit,"at":line.updated_at or line.created_at}
+        suppliers.append({"id":master.id if master else None,"name":master.name if master else next((row.supplier_name for row in purchases if row.supplier_name), normalized.title()),"status":master.status if master else "historical","purchase_count":len(purchases),"total_spend":sum(_money(row.actual_total) for row in purchases),"outstanding":sum(row.balance for row in obligations),"last_purchase":purchases[0].confirmed_at if purchases else None,"prices":sorted(price_map.values(), key=lambda item:as_utc(item["at"]), reverse=True)[:4]})
     suppliers.sort(key=lambda row: row["total_spend"], reverse=True)
     return {"currency":user.organization.currency,"traces":traces,"suppliers":suppliers,"supplier_count":len(suppliers),"completed_purchase_count":len(fulfillments),"supplier_spend":sum(_money(row.actual_total) for row in fulfillments),"supplier_outstanding":sum(row.balance for row in payables)}
 
@@ -102,7 +103,10 @@ def can_actor_approve_request(actor, request_row):
     if actor.organization_id != request_row.organization_id: return False, "Request is outside your organization.", None
     if actor.id == request_row.requester_id: return False, "A requester cannot approve their own transaction.", approval_rule_for_amount(actor.organization_id, request_row.estimated_total)
     rule = approval_rule_for_amount(actor.organization_id, request_row.estimated_total)
-    if not rule: return actor.role in {"owner", "admin", "finance"}, "Only Owner/Admin/Finance can approve until approval limits are configured.", None
+    if not rule:
+        configured = ApprovalRule.query.filter_by(organization_id=actor.organization_id, is_active=True).first()
+        if configured: return actor.role == "owner", "No configured limit covers this amount; owner approval is required.", None
+        return actor.role in {"owner", "admin", "finance"}, "Only Owner/Admin/Finance can approve until approval limits are configured.", None
     required_rank, actor_rank = ROLE_RANK.get(rule.required_role, 4), ROLE_RANK.get(actor.role, 0)
     if actor_rank < required_rank: return False, f"{rule.name} requires {rule.required_role.replace('_',' ').title()} approval for this amount.", rule
     if rule.required_role == "department_head" and actor.role == "department_head" and actor.department_id != request_row.department_id: return False, "Department Heads can approve only requests from their own department.", rule
@@ -134,7 +138,7 @@ def create_approval_rule(user, payload):
     if required_role not in {"department_head", "finance", "admin", "owner"}: raise ValueError("Choose Department Head, Finance, Admin or Owner as the required approver.")
     try: minimum = Decimal(str(payload.get("min_amount") or 0)).quantize(Decimal("0.01")); maximum = Decimal(str(payload.get("max_amount"))).quantize(Decimal("0.01")) if payload.get("max_amount") not in (None, "") else None
     except (InvalidOperation, ValueError): raise ValueError("Enter valid approval amounts.")
-    if minimum < 0 or (maximum is not None and maximum < minimum): raise ValueError("Maximum approval amount must be blank or greater than/equal to the minimum.")
+    if not minimum.is_finite() or (maximum is not None and not maximum.is_finite()) or minimum < 0 or (maximum is not None and maximum < minimum): raise ValueError("Enter finite approval amounts; maximum must be blank or greater than/equal to the minimum.")
     row = ApprovalRule(organization_id=user.organization_id, name=name, min_amount=minimum, max_amount=maximum, required_role=required_role, priority=int(payload.get("priority") or 100), created_by_id=user.id); db.session.add(row); db.session.flush(); return row
 
 def management_settings_context(user):
@@ -151,7 +155,7 @@ def branch_comparison_context(user):
         dept_ids = link_map.get(branch.id, []); departments = Department.query.filter(Department.organization_id == org, Department.id.in_(dept_ids)).order_by(Department.name.asc()).all() if dept_ids else []; finance = FinancialRecord.query.filter(FinancialRecord.organization_id == org, FinancialRecord.department_id.in_(dept_ids), FinancialRecord.status == "posted").all() if dept_ids else []; income = sum(_money(row.amount) for row in finance if row.record_type in INFLOW_TYPES); expenses = sum(_money(row.amount) for row in finance if row.record_type in OUTFLOW_TYPES); budgets = BudgetAllocation.query.filter(BudgetAllocation.organization_id == org, BudgetAllocation.department_id.in_(dept_ids), BudgetAllocation.status == "active").all() if dept_ids else []; budget_total = sum(row.total_budget for row in budgets); budget_used = sum(_money(row.actual_spend) + _money(row.committed_amount) for row in budgets); inventory = InventoryItem.query.filter(InventoryItem.organization_id == org, InventoryItem.department_id.in_(dept_ids)).all() if dept_ids else []; ap = FinancePayable.query.filter(FinancePayable.organization_id == org, FinancePayable.department_id.in_(dept_ids), ~FinancePayable.status.in_(["paid","cancelled"])).all() if dept_ids else []; ar = FinanceReceivable.query.filter(FinanceReceivable.organization_id == org, FinanceReceivable.department_id.in_(dept_ids), ~FinanceReceivable.status.in_(["paid","cancelled"])).all() if dept_ids else []
         dept_rows = []
         for department in departments:
-            dept_finance = [row for row in finance if row.department_id == department.id]; recent = sorted(dept_finance, key=lambda row:row.occurred_at or row.created_at, reverse=True)[:4]; dept_rows.append({"id":department.id,"name":department.name,"income":sum(_money(row.amount) for row in dept_finance if row.record_type in INFLOW_TYPES),"expenses":sum(_money(row.amount) for row in dept_finance if row.record_type in OUTFLOW_TYPES),"recent":recent})
+            dept_finance = [row for row in finance if row.department_id == department.id]; recent = sorted(dept_finance, key=lambda row:as_utc(row.occurred_at or row.created_at), reverse=True)[:4]; dept_rows.append({"id":department.id,"name":department.name,"income":sum(_money(row.amount) for row in dept_finance if row.record_type in INFLOW_TYPES),"expenses":sum(_money(row.amount) for row in dept_finance if row.record_type in OUTFLOW_TYPES),"recent":recent})
         output.append({"id":branch.id,"name":branch.name,"code":branch.code,"address":branch.address,"is_head_office":branch.is_head_office,"income":income,"expenses":expenses,"net":income-expenses,"budget_total":budget_total,"budget_usage":(budget_used/budget_total*100.0) if budget_total else 0.0,"inventory_value":sum(row.total_value for row in inventory),"receivables":sum(row.balance for row in ar),"payables":sum(row.balance for row in ap),"departments":dept_rows})
     return {"currency":user.organization.currency,"branches":output,"branch_count":len(output)}
 
@@ -184,7 +188,7 @@ def management_anomaly_context(user):
     def add(rank, kind, title, detail, route="audit", metric=None): alerts.append({"rank":rank,"priority":_priority(rank),"kind":kind,"title":title,"detail":detail,"route":route,"metric":metric})
 
     expense_rows = FinancialRecord.query.filter(FinancialRecord.organization_id == org, FinancialRecord.status == "posted", FinancialRecord.record_type.in_(tuple(OUTFLOW_TYPES))).all(); current_start, previous_start = now - timedelta(days=30), now - timedelta(days=60)
-    current_spend = sum(_money(row.amount) for row in expense_rows if row.occurred_at and row.occurred_at >= current_start); previous_spend = sum(_money(row.amount) for row in expense_rows if row.occurred_at and previous_start <= row.occurred_at < current_start)
+    current_spend = sum(_money(row.amount) for row in expense_rows if row.occurred_at and as_utc(row.occurred_at) >= current_start); previous_spend = sum(_money(row.amount) for row in expense_rows if row.occurred_at and previous_start <= as_utc(row.occurred_at) < current_start)
     if previous_spend > 0 and current_spend > previous_spend * 1.5: add(3, "spend_spike", "Spending increased sharply", f"Last 30-day spend is {current_spend:,.2f}, up {((current_spend / previous_spend) - 1) * 100:.1f}% from the previous 30 days.", "analytics", f"+{((current_spend / previous_spend) - 1) * 100:.0f}%")
 
     receivables = FinanceReceivable.query.filter_by(organization_id=org).all(); payables = FinancePayable.query.filter_by(organization_id=org).all(); invoice_counts = Counter(str(row.invoice_number).strip().lower() for row in receivables if row.invoice_number); bill_counts = Counter(str(row.bill_number).strip().lower() for row in payables if row.bill_number)
@@ -211,7 +215,14 @@ def management_anomaly_context(user):
     if missing: add(3, "missing_receipt", "Confirmed purchases missing receipts", f"{len(missing)} confirmed acquisition(s) have no receipt/invoice attachment.", "procurement", str(len(missing)))
 
     supplier_lines = defaultdict(list)
-    for line in FulfillmentLine.query.join(PurchaseFulfillment, PurchaseFulfillment.id == FulfillmentLine.fulfillment_id).filter(PurchaseFulfillment.organization_id == org, PurchaseFulfillment.confirmed_at.isnot(None), PurchaseFulfillment.supplier_name.isnot(None)).order_by(FulfillmentLine.delivered_at.asc(), FulfillmentLine.created_at.asc()).all(): supplier_lines[(line.fulfillment.supplier_name.strip().lower(), line.item_name.strip().lower())].append(line)
+    for line in FulfillmentLine.query.join(PurchaseFulfillment, PurchaseFulfillment.id == FulfillmentLine.fulfillment_id).filter(PurchaseFulfillment.organization_id == org, PurchaseFulfillment.confirmed_at.isnot(None), PurchaseFulfillment.supplier_name.isnot(None)).order_by(FulfillmentLine.delivered_at.asc(), FulfillmentLine.created_at.asc()).all(): supplier_lines[(line.fulfillment.supplier_name.strip().lower(), line.item_name.strip().lower(), line.unit.strip().lower())].append(line)
+    from models import DirectPurchaseLine
+    from types import SimpleNamespace
+    for line in DirectPurchaseLine.query.filter_by(organization_id=org).all():
+        if line.ledger.counterparty:
+            key=(line.ledger.counterparty.strip().lower(),line.item_name.strip().lower(),line.unit.strip().lower())
+            supplier_lines[key].append(SimpleNamespace(actual_unit_cost=line.unit_cost,delivered_at=line.ledger.occurred_at,created_at=line.created_at))
+    for lines in supplier_lines.values(): lines.sort(key=lambda line:as_utc(line.delivered_at or line.created_at))
     price_rises = []
     for key, lines in supplier_lines.items():
         if len(lines) < 2: continue

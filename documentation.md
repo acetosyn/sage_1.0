@@ -71,7 +71,7 @@ The current build is no longer only an inventory prototype. It now combines:
 - inventory and stock movement;
 - asset registration and movement;
 - department-specific operations;
-- staff daily/weekly reporting;
+- staff daily/weekly/monthly/quarterly reporting;
 - finance accounts, ledger, budgets, receivables, payables, reconciliation, payroll, tax and forecasting;
 - real-time notifications;
 - SAGE Pulse login/recurring briefing;
@@ -368,6 +368,8 @@ Staff can generate:
 ```text
 Daily Report
 Weekly Report
+Monthly Report
+Quarterly Report
 ```
 
 Reports derive from actual tracked activity, requests, stock movements, asset movements and department operations.
@@ -3084,3 +3086,136 @@ Owner opens Dashboard
 → can identify the responsible people and retained change history
 → can export the required report in CSV, Excel or PDF.
 ```
+
+---
+
+# SAGE 1.0 Major Upgrade — Income, Mobile UX, Developer Support & Complete Live Owner Visibility
+
+> **Upgrade date:** 8 October 2026  
+> **Source baseline:** `sage_1.0.zip` supplied after the earlier CEO-management upgrade.  
+> **Implementation rule:** mobile-first, tenant-scoped, compact horizontal code style, and existing finance/request/operations records remain the source of truth.
+
+## Phase 1 — Global Modal UX Repair
+
+- All normal SAGE modals now open near the top of the viewport instead of visually falling toward the page bottom.
+- Desktop modals use a compact upper viewport position and capped height.
+- Mobile modals use narrower outer margins, smaller maximum height, rounded cards and internal scrolling instead of consuming the entire screen.
+- Modal headers/actions remain reachable while long forms scroll.
+- Opening a modal resets its internal scroll position and locks background scrolling; closing restores the page cleanly.
+- The behavior is global, so Request, Funding, Acquisition, Finance, Inventory, Assets, Staff, Operations, Income and later modals inherit the correction automatically.
+
+## Phase 2 — Dedicated Income & Sales Workspace
+
+- Added `Income & Sales` as a first-class SAGE page and navigation destination.
+- Added accountable Sale/Revenue and Other Income entry from real staff accounts.
+- Normal staff are restricted to their department/own scope; Owner/Admin/Finance retain organization-wide visibility and account allocation controls.
+- Every money-in row exposes date/time, SAGE reference, description/category, source/customer, department, recorder/position, payment method/reference, evidence and exact amount.
+- Money-in remains backed by the existing `FinanceLedgerEntry`/`FinancialRecord` architecture; the page does not create a duplicate income ledger.
+- Owner live notifications now contain useful income details instead of only changing an aggregate dashboard total.
+
+## Phase 3 — Revenue / Net-Profit Performance Targets
+
+- Added `FinancePerformanceTarget` for monthly/yearly Revenue or Net Profit management targets.
+- Owner/Admin may set organization-wide or department targets.
+- Actual performance is calculated from posted SAGE financial records and compared with target, variance and percentage progress.
+- Owner Dashboard now displays recent detailed money-in and current target progress automatically.
+- Permanent tenant deletion includes the new target table.
+
+## Phase 4 — Platform Support, Themes & Password Security
+
+- Added a Developer `Login Directory` showing organization, staff/owner name, login email, employee ID, department/role, status and last login.
+- SAGE does **not** display existing passwords or password hashes. Passwords remain one-way hashed.
+- Platform Admin can generate a fresh one-time temporary password for a selected user; the temporary credential is returned only once and is not stored as recoverable plaintext.
+- Added self-service `Change password` directly from the normal SAGE login screen. The user verifies their current password and the email/login identifier remains unchanged.
+- Added six Platform Console themes: Midnight, Light, Ocean, Emerald, Violet and Amber.
+- Developer modal/directory/theme controls have dedicated responsive mobile behavior.
+
+## Phase 5 — Income Intelligence + Complete Owner Event Notification Coverage
+
+### Income intelligence additions
+
+1. Quick Sale preset.
+2. Quick Other Income preset.
+3. Role-scoped Income CSV export available to staff for only the rows they are allowed to see.
+4. Management Income Excel export.
+5. Management Income PDF export.
+6. Today-versus-yesterday revenue trend.
+7. Current-month-versus-previous-month trend.
+8. Average money-in transaction value.
+9. Largest visible income transaction.
+10. Supporting-evidence coverage percentage and missing-evidence count.
+11. Evidence filter: All / With Evidence / Missing Evidence.
+12. Top Customer / Source ranking.
+13. Payment Method mix/ranking.
+14. Department Revenue leaderboard.
+15. Target health labels: Behind Target / On Track / Target Achieved.
+
+### Owner real-time coverage additions
+
+- `record_activity()` now guarantees a real-time Owner/Admin notification for meaningful actions performed by staff, Finance, Procurement, Department Heads and Admin users even when an older feature explicitly passed `notify_owner=False`.
+- Draft/page-view noise remains audit-only, so complete coverage does not turn ordinary navigation into alerts.
+- Notification emails are no longer implicitly triggered for every event; email remains an explicit escalation while in-app/SSE/Web Push remains the complete real-time layer.
+- Bell notifications now contain a deep-link route to the closest relevant SAGE page.
+- SAGE Pulse live cards can show `Open details` for the originating module.
+- Current pages such as Income, Procurement, Operations and Reports participate in automatic live refresh after incoming events.
+
+## New / Extended Endpoints
+
+```text
+POST /api/auth/change-password
+POST /platform-admin/api/users/<user_id>/reset-password
+POST /api/income/entries
+GET  /api/income/export.csv
+POST /api/finance/performance-targets
+```
+
+## Security Notes
+
+- Login email is the current SAGE account identifier; this upgrade does not change it during password rotation.
+- Existing passwords cannot be displayed because only password hashes are stored.
+- Platform password reset replaces the old password with a randomly generated temporary credential and records the action in Platform Admin Audit.
+- Income queries and exports use the same role/department scope as the Income & Sales page.
+- Owner notifications remain `organization_id` + recipient `user_id` scoped and therefore do not cross tenants.
+
+---
+
+# October 2026 — Staff Invitation & Reporting Upgrade
+
+This upgrade builds on the completed Owner/Management control architecture without replacing the 18-point Owner requirements already covered by SAGE.
+
+## Phase 1 — Hybrid staff invitations
+
+- Owner/Admin can still create and copy a private staff registration link.
+- A new **Mail Invite** mode sends the same secure token directly to the staff member's email address.
+- SAGE now accepts both the existing `SMTP_*` configuration names and the EMIS-compatible `MAIL_SERVER`, `MAIL_PORT`, `MAIL_USE_TLS`, `MAIL_USE_SSL`, `MAIL_USERNAME`, `MAIL_PASSWORD` and `EMAIL_FROM` environment variables.
+- When valid mail credentials are present, email notifications are enabled automatically unless `EMAIL_NOTIFICATIONS_ENABLED` explicitly overrides the setting.
+- Email delivery is queued outside the web request so SMTP delay does not block the owner interface.
+
+## Phase 2 — Expanded organization departments
+
+All organization templates were expanded substantially. School onboarding now includes additional operational units such as Examinations & Assessment, CBT Centre, Kitchen/Catering, Uniform/Tailoring/Garment Production, Clinic/Sick Bay, Boarding/Hostel, Events, Quality Assurance, Tahfeez, Islamiyyah, Early Years and Cleaning/Sanitation. Healthcare, hospitality, manufacturing, retail, construction, logistics, restaurant, technology, NGO and custom organizations received similar expansion.
+
+Where an expanded department has a strong cross-industry equivalent, the item catalogue can reuse the relevant seed catalogue instead of showing an empty department catalogue.
+
+## Phase 3 — Staff report periods and delivery
+
+Staff accountability reports now support:
+
+```text
+Daily
+Weekly
+Monthly
+Quarterly (calendar quarter / three-month reporting window)
+```
+
+Submission records include the period, generated metrics, written staff note and source activity. Submitted reports continue to trigger tenant-scoped Owner/Admin notifications and optional email escalation.
+
+## Phase 4 — Reports UI 2.0
+
+Owner/Admin Reports now starts with a searchable **Staff Report Inbox** instead of forcing management to scroll through the export centre first. The inbox exposes staff, department, reference, period, submission time, acknowledgement state, written note, generated summary, source metrics and source activity. Management can acknowledge the report directly from the expanded row.
+
+Staff get four compact report launchers and a table-like report history with draft/submitted/acknowledged states. The report composer makes it clear that SAGE has already collected the tracked activity and the staff note should provide human context.
+
+## Phase 5 — Owner dashboard report visibility
+
+The Owner dashboard now includes a compact **Staff Report Inbox** with the latest submissions and an unread/review count. SAGE Pulse also tells Owner/Admin how many submitted staff reports are waiting for acknowledgement and deep-links directly to Reports.

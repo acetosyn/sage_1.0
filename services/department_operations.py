@@ -13,6 +13,8 @@ from services.notification_service import notify_user, record_activity
 # ==========================================================
 
 DEFAULT_OPERATIONS = [
+    {"type":"financial_income","label":"Record Actual Income","icon":"wallet","detail":"Record money actually received; department income and owner tracking update automatically."},
+    {"type":"financial_expense","label":"Record Actual Expense","icon":"receipt","detail":"Record money actually spent and attach evidence for management review."},
     {"type":"activity_completed","label":"Record Completed Activity","icon":"check","detail":"Log a completed departmental task or service."},
     {"type":"item_used","label":"Record Item / Material Used","icon":"inventory","detail":"Record materials, consumables or supplies used during work."},
     {"type":"item_moved","label":"Record Item Movement","icon":"assets","detail":"Log an item or equipment movement not already captured by stock/assets."},
@@ -142,7 +144,7 @@ OPERATION_PROFILES = [
 def department_operations_profile(department_name):
     name = str(department_name or "").strip().lower()
     for keywords, operations in OPERATION_PROFILES:
-        if any(keyword in name for keyword in keywords): return operations
+        if any(keyword in name for keyword in keywords): return operations + DEFAULT_OPERATIONS[:2]
     return DEFAULT_OPERATIONS
 
 
@@ -154,17 +156,42 @@ def operation_label(department_name, operation_type):
 # OPERATION CREATION
 # ==========================================================
 
-def create_department_operation(app, user, payload):
+def create_department_operation(app, user, payload, evidence=None):
     department = user.department if user.role not in {"owner", "admin"} else Department.query.filter_by(id=payload.get("department_id") or user.department_id, organization_id=user.organization_id, is_active=True).first()
     if not department: raise ValueError("Choose a valid department before recording an operation.")
+    from services.finance_service import _money
+    from core.datetime_utils import as_utc
+    from services.operations_service import next_reference
+    value = _money(payload.get("amount"))
+    if value < 0: raise ValueError("Amounts cannot be negative.")
     operation_type = str(payload.get("operation_type") or "").strip(); valid_types = {row["type"] for row in department_operations_profile(department.name)} | {row["type"] for row in DEFAULT_OPERATIONS}
     if operation_type not in valid_types: raise ValueError("Choose a valid department operation.")
     title = str(payload.get("title") or operation_label(department.name, operation_type)).strip()[:180]; item_name = str(payload.get("item_name") or "").strip()[:180] or None; destination = Department.query.filter_by(id=payload.get("destination_department_id"), organization_id=user.organization_id, is_active=True).first() if payload.get("destination_department_id") else None
     occurred_at = datetime.fromisoformat(str(payload.get("occurred_at")).replace("Z", "+00:00")) if payload.get("occurred_at") else datetime.now(timezone.utc)
     if occurred_at.tzinfo is None: occurred_at = occurred_at.replace(tzinfo=timezone.utc)
-    reference = f"OPS-{datetime.now().strftime('%y%m%d')}-{DepartmentOperation.query.filter_by(organization_id=user.organization_id).count()+1:05d}"
+    occurred_at = as_utc(occurred_at)
+    reference = next_reference("OPS", DepartmentOperation, user.organization_id)
     row = DepartmentOperation(reference=reference, organization_id=user.organization_id, department_id=department.id, user_id=user.id, operation_type=operation_type, title=title, item_name=item_name, quantity=float(payload.get("quantity") or 0), unit=str(payload.get("unit") or "").strip()[:60] or None, amount=float(payload.get("amount") or 0), currency=user.organization.currency or "NGN", location=str(payload.get("location") or "").strip()[:180] or None, destination_department_id=destination.id if destination else None, external_reference=str(payload.get("external_reference") or "").strip()[:120] or None, notes=str(payload.get("notes") or "").strip() or None, details_json={"position": user.position or user.role_label}, status="posted", occurred_at=occurred_at)
     db.session.add(row); db.session.flush(); details = f"{user.display_name} recorded {operation_label(department.name, operation_type)} in {department.name}."
+    incoming = {"financial_income", "transport_income", "project_income", "revenue_activity", "collection"}
+    outgoing = {"financial_expense", "field_expense", "campaign_cost", "hr_operating_cost", "external_referral_cost", "contractor_service"}
+    if operation_type in {"financial_income", "financial_expense"} and value <= 0: raise ValueError("Enter the actual amount received or spent.")
+    if value > 0 and operation_type in incoming | outgoing:
+        from models import FinancialRecord, FinanceLedgerEntry, BudgetAllocation
+        financial_type = "revenue" if operation_type in incoming else "expense"
+        budget = None
+        if financial_type == "expense":
+            candidates = BudgetAllocation.query.filter_by(organization_id=user.organization_id, department_id=department.id, status="active").filter(BudgetAllocation.period_start <= occurred_at.date(), BudgetAllocation.period_end >= occurred_at.date()).with_for_update().all()
+            if payload.get("budget_id"):
+                budget = next((candidate for candidate in candidates if candidate.id == payload["budget_id"]), None)
+                if not budget: raise ValueError("Choose an active budget for this department.")
+            elif len(candidates) == 1: budget = candidates[0]
+            if budget: budget.actual_spend = _money(budget.actual_spend) + value
+        db.session.add(FinancialRecord(reference=next_reference("FIN", FinancialRecord, user.organization_id), organization_id=user.organization_id, department_id=department.id, created_by_id=user.id, record_type=financial_type, category="Staff-recorded actual financial activity", description=row.title, amount=value, currency=row.currency, status="posted", occurred_at=occurred_at, source_entity_type="department_operation", source_entity_id=row.id))
+        db.session.add(FinanceLedgerEntry(reference=next_reference("LED", FinanceLedgerEntry, user.organization_id), organization_id=user.organization_id, department_id=department.id, budget_id=budget.id if budget else None, created_by_id=user.id, entry_type=financial_type, direction="in" if financial_type == "revenue" else "out", description=row.title, amount=value, currency=row.currency, external_reference=row.external_reference, status="posted", occurred_at=occurred_at, posted_at=datetime.now(timezone.utc), source_entity_type="department_operation", source_entity_id=row.id))
+    if evidence and evidence.filename:
+        from services.storage_service import save_attachment
+        save_attachment(app, evidence, user, "department_operation", row.id, "receipts", final=True)
     if item_name: details += f" Item/activity: {item_name}."
     if float(row.quantity or 0): details += f" Quantity: {float(row.quantity):g} {row.unit or ''}."
     if float(row.amount or 0): details += f" Amount: {row.currency} {float(row.amount):,.2f}."
@@ -175,7 +202,12 @@ def create_department_operation(app, user, payload):
 # ==========================================================
 
 def _period_bounds(period_type, today=None):
-    today = today or date.today(); start = today if period_type == "daily" else today - timedelta(days=today.weekday())
+    today = today or date.today(); period_type = str(period_type or "daily").strip().lower()
+    if period_type == "daily": start = today
+    elif period_type == "weekly": start = today - timedelta(days=today.weekday())
+    elif period_type == "monthly": start = today.replace(day=1)
+    elif period_type == "quarterly": start = today.replace(month=((today.month - 1) // 3) * 3 + 1, day=1)
+    else: raise ValueError("Report period must be Daily, Weekly, Monthly or Quarterly.")
     return start, today
 
 
@@ -200,15 +232,18 @@ def report_metrics(user, period_type="daily", period_start=None, period_end=None
 
 
 def generate_staff_report(app, user, period_type="daily", staff_note="", submit=False):
-    period_type = period_type if period_type in {"daily","weekly"} else "daily"; data = report_metrics(user, period_type); start_date, end_date, metrics = data["period_start"], data["period_end"], data["metrics"]
+    period_type = str(period_type or "daily").strip().lower()
+    if period_type not in {"daily","weekly","monthly","quarterly"}: raise ValueError("Report period must be Daily, Weekly, Monthly or Quarterly.")
+    data = report_metrics(user, period_type); start_date, end_date, metrics = data["period_start"], data["period_end"], data["metrics"]
     existing = StaffReport.query.filter_by(organization_id=user.organization_id, user_id=user.id, period_type=period_type, period_start=start_date, period_end=end_date).first(); row = existing or StaffReport(reference=f"RPT-{datetime.now().strftime('%y%m%d')}-{StaffReport.query.filter_by(organization_id=user.organization_id).count()+1:05d}", organization_id=user.organization_id, department_id=user.department_id, user_id=user.id, period_type=period_type, period_start=start_date, period_end=end_date, title=f"{period_type.title()} Activity Report · {user.display_name}")
     summary = f"{user.display_name} recorded {metrics['operations']} department operation(s), {metrics['requests']} request(s), {metrics['stock_movements']} stock movement(s) and {metrics['asset_movements']} asset movement(s) during this {period_type} period."
     row.summary, row.metrics_json, row.activity_json = summary, metrics, data["actions"]; note = str(staff_note or "").strip(); row.staff_note = note if note else (row.staff_note if existing else None)
     if submit: row.status, row.submitted_at = "submitted", datetime.now(timezone.utc)
     elif row.status not in {"submitted","acknowledged"}: row.status = "draft"
     if not existing: db.session.add(row)
-    db.session.flush(); action = "staff_report_submitted" if submit else "staff_report_generated"; title = "Staff report submitted" if submit else "Staff report generated"
-    record_activity(app, user, action, title, f"{user.display_name} {'submitted' if submit else 'generated'} a {period_type} activity report for {start_date.strftime('%d %b')} to {end_date.strftime('%d %b %Y')}.", "staff_report", row.id, {"reference":row.reference,"period_type":period_type,"metrics":metrics}, notify_owner=submit, email_owner=submit); db.session.commit(); return row
+    db.session.flush(); action = "staff_report_submitted" if submit else "staff_report_generated"; title = f"{period_type.title()} report submitted · {user.display_name}" if submit else "Staff report generated"
+    description = f"{user.display_name} {'submitted' if submit else 'generated'} {row.reference} for {start_date.strftime('%d %b')} to {end_date.strftime('%d %b %Y')}. {summary}" + (f" Staff note: {row.staff_note}" if submit and row.staff_note else "")
+    record_activity(app, user, action, title, description, "staff_report", row.id, {"reference":row.reference,"period_type":period_type,"period_start":start_date.isoformat(),"period_end":end_date.isoformat(),"department":user.department.name if user.department else None,"metrics":metrics,"staff_note":row.staff_note}, notify_owner=submit, email_owner=submit, level="success" if submit else "info"); db.session.commit(); return row
 
 
 def acknowledge_staff_report(app, actor, report):

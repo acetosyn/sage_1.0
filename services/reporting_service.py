@@ -3,6 +3,7 @@
 
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from services.period_service import period_bounds
 import json
 from models import AssetItem, BudgetAllocation, FinancePayable, FinanceReceivable, FinancialRecord, InventoryItem, PayrollEntry, PurchaseFulfillment, PurchaseRequest, RequestFunding, TaxEntry
 
@@ -19,7 +20,10 @@ def _money(value): return float(value or 0)
 def _scoped_query(query, model, user):
     """Keep reporting inside the signed-in organization and, for ordinary staff, their department."""
     query = query.filter(model.organization_id == user.organization_id)
-    if user.role not in {"owner", "admin", "finance", "procurement"} and hasattr(model, "department_id") and user.department_id: query = query.filter(model.department_id == user.department_id)
+    if user.role not in {"owner", "admin", "finance", "procurement"}:
+        if hasattr(model, "department_id") and user.department_id: query = query.filter(model.department_id == user.department_id)
+        elif hasattr(model, "created_by_id"): query = query.filter(model.created_by_id == user.id)
+        else: query = query.filter(False)
     return query
 
 
@@ -85,7 +89,8 @@ def report_period_start(period):
 
 
 def _period_filter(query, field, period):
-    start = report_period_start(period); return query.filter(field >= start) if start else query
+    start, end = period_bounds(period)
+    return query.filter(field >= start, field < end) if start else query
 
 
 def management_export_rows(user, report_type="summary", period="all"):
@@ -118,7 +123,13 @@ def management_export_rows(user, report_type="summary", period="all"):
     elif report_type == "finance":
         query = _scoped_query(FinanceLedgerEntry.query, FinanceLedgerEntry, user); query = _period_filter(query, FinanceLedgerEntry.occurred_at, period); ledger = query.order_by(FinanceLedgerEntry.occurred_at.desc()).all(); headers = ["Reference", "Date", "Type", "Direction", "Description", "Counterparty", "Department", "Amount", "Currency", "Status", "External Reference"]
         rows = [[row.reference, row.occurred_at.isoformat() if row.occurred_at else "", row.display_type, row.direction, row.description, row.counterparty or "", row.department.name if row.department else "", f"{_money(row.amount):.2f}", row.currency, row.status, row.external_reference or ""] for row in ledger]
-    elif report_type in {"income", "expenses", "cash-flow"}:
+    elif report_type == "cash-flow":
+        from services.owner_control_service import management_workspace
+        snapshot = management_workspace(user, period)
+        headers = ["Reference", "Date", "Account", "Description", "Cash In", "Cash Out", "Currency"]
+        rows = [[row["reference"], row["date"] or "Date not recorded", row.get("account", "Unallocated historical funding"), row["title"], f"{float(row['amount']):.2f}" if row["direction"] == "in" else "0.00", f"{float(row['amount']):.2f}" if row["direction"] == "out" else "0.00", row["currency"]] for row in snapshot["cash_movements"]]
+        rows += [["TOTAL", "", "", "Recorded ledger and historical request funding", f"{snapshot['totals']['cash_in']:.2f}", f"{snapshot['totals']['cash_out']:.2f}", currency]]
+    elif report_type in {"income", "expenses"}:
         source = income_rows if report_type == "income" else (expense_rows if report_type == "expenses" else financial); headers = ["Reference", "Date", "Type", "Category", "Department", "Description", "Amount", "Currency"]
         rows = [[row.reference, row.occurred_at.isoformat() if row.occurred_at else "", row.record_type.replace("_"," ").title(), row.category or "", row.department.name if row.department else "", row.description, f"{_money(row.amount):.2f}", row.currency] for row in source]
     elif report_type == "profit-loss":
@@ -134,8 +145,8 @@ def management_export_rows(user, report_type="summary", period="all"):
         supplier_rows = procurement_management_context(user)["suppliers"]; headers = ["Supplier", "Purchases", "Total Spent", "Outstanding", "Last Purchase", "Status", "Latest Prices"]
         rows = [[row["name"], row["purchase_count"], f'{row["total_spend"]:.2f}', f'{row["outstanding"]:.2f}', row["last_purchase"].isoformat() if row["last_purchase"] else "", row["status"], "; ".join(f'{item["item"]}: {item["price"]:.2f}/{item["unit"]}' for item in row["prices"])] for row in supplier_rows]
     elif report_type == "branches":
-        from services.management_service import branch_comparison_context
-        data = branch_comparison_context(user)["branches"]; headers = ["Branch", "Code", "Income", "Expenses", "Profit/Loss", "Budget", "Budget Usage %", "Inventory Value", "Receivables", "Payables"]
+        from services.owner_control_service import management_workspace
+        data = management_workspace(user,period)["branches"]; headers = ["Branch", "Code", "Income", "Expenses", "Profit/Loss", "Budget", "Budget Usage %", "Inventory Value", "Receivables", "Payables"]
         rows = [[row["name"], row["code"], f'{row["income"]:.2f}', f'{row["expenses"]:.2f}', f'{row["net"]:.2f}', f'{row["budget_total"]:.2f}', f'{row["budget_usage"]:.2f}', f'{row["inventory_value"]:.2f}', f'{row["receivables"]:.2f}', f'{row["payables"]:.2f}'] for row in data]
     else:
         income = sum(_money(row.amount) for row in income_rows); expenses = sum(_money(row.amount) for row in expense_rows); inventory = _scoped_query(InventoryItem.query, InventoryItem, user).all(); assets = _scoped_query(AssetItem.query, AssetItem, user).all(); receivables = _scoped_query(FinanceReceivable.query, FinanceReceivable, user).all(); payables = _scoped_query(FinancePayable.query, FinancePayable, user).all(); headers = ["Metric", "Value", "Currency / Unit", "Period"]

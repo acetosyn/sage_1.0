@@ -1,0 +1,132 @@
+{% macro money(value, currency=current_user.organization.currency) -%}
+<span data-private-value>{{ currency }} {{ '{:,.0f}'.format(value or 0) }}</span>
+{%- endmacro %}
+{% macro metric(label, value, kind='money', route='finance') -%}
+<a class="dashboard-metric" href="/{{ route }}" data-route="{{ route }}">
+  <span>{{ label }}<svg aria-hidden="true"><use href="#i-arrow-up-right"/></svg></span>
+  <strong>{% if kind == 'money' %}{{ money(value) }}{% elif kind == 'percent' %}{{ '{:,.1f}'.format(value or 0) }}%{% else %}{{ value or 0 }}{% endif %}</strong>
+</a>
+{%- endmacro %}
+
+<section class="page-shell page-enter owner-dashboard" data-page-view="dashboard" data-dashboard data-dashboard-key="{{ current_user.organization_id }}:{{ current_user.id }}">
+  <header class="dashboard-heading">
+    <div><p class="eyebrow">YOUR BUSINESS, IN VIEW</p><h1>Dashboard</h1><p>Welcome back, {{ current_user.first_name }}. <span>{{ current_user.organization.name }}</span></p></div>
+    <div class="dashboard-freshness"><span class="dashboard-live-dot" aria-hidden="true"></span><span data-dashboard-freshness>Updated just now</span></div>
+  </header>
+
+  <!-- The four primary totals always lead the dashboard. -->
+  <div class="dashboard-summary-grid" aria-label="Business summary">
+    {% for label,value,icon,route,note,series in [
+      ('Income / Revenue',finance_summary.income_total,'wallet','income','Live · open detailed money-in register',finance_chart.income),
+      ('Expenses / Expenditure',finance_summary.expense_total,'receipt','finance','Evidence linked where required',finance_chart.expenses),
+      ('Net Position',finance_summary.net,'analytics','reports',('Positive' if (finance_summary.net or 0) >= 0 else 'Negative') ~ ' · income minus expenses',finance_chart.net)
+    ] %}
+    <a class="dashboard-summary-card" href="/{{ route }}" data-route="{{ route }}">
+      <div class="dashboard-summary-top"><span>{{ label }}</span><svg aria-hidden="true"><use href="#i-{{ icon }}"/></svg></div>
+      <div class="dashboard-summary-amount"><small>{{ current_user.organization.currency }}</small><strong data-private-value>{{ '{:,.0f}'.format(value or 0) }}</strong></div>
+      <p class="{{ 'dashboard-negative' if label == 'Net Position' and (value or 0) < 0 else '' }}">{{ note }}</p>
+      <canvas class="sparkline" width="400" height="40" data-values="{{ series|join(',') }}" data-color="blue" aria-hidden="true"></canvas>
+      <span class="dashboard-card-link">{{ 'View reports' if route == 'reports' else 'Open finance' }} <svg aria-hidden="true"><use href="#i-chevron-right"/></svg></span>
+    </a>
+    {% endfor %}
+    <a class="dashboard-summary-card dashboard-approvals-card" href="/requests" data-route="requests">
+      <div class="dashboard-summary-top"><span>Pending Approvals</span><svg aria-hidden="true"><use href="#i-clock"/></svg></div>
+      <div class="dashboard-summary-amount"><small>AWAITING A DECISION</small><strong>{{ pending_request_count }}</strong></div>
+      <p>{{ unread_notifications }} unread live alert{{ 's' if unread_notifications != 1 else '' }}</p>
+      <span class="dashboard-approval-status"><span class="dashboard-live-dot" aria-hidden="true"></span>{{ 'Ready for review' if pending_request_count else 'Approvals up to date' }}</span>
+      <span class="dashboard-card-link">Review requests <svg aria-hidden="true"><use href="#i-chevron-right"/></svg></span>
+    </a>
+  </div>
+
+  {% if executive_management %}<div class="dashboard-position-strip" aria-label="Current business balances"><div><span>Receivables</span><strong>{{ money(executive_management.executive.receivables) }}</strong></div><div><span>Payables</span><strong>{{ money(executive_management.executive.payables) }}</strong></div><div><span>Inventory value</span><strong>{{ money(executive_management.executive.inventory_value) }}</strong></div><div><span>Budget usage</span><strong>{% if executive_management.budget_count %}{{ '{:,.1f}'.format(executive_management.executive.budget_usage) }}%{% else %}Not configured{% endif %}</strong></div></div>{% endif %}
+
+  <div class="dashboard-toolbar">
+    <nav class="dashboard-jump-links" aria-label="Dashboard sections">
+      <button type="button" data-dashboard-jump="dashboard-details">Details</button>
+      <button type="button" data-dashboard-jump="dashboard-attention">Attention{% if executive_management and executive_management.attention_count %}<span>{{ executive_management.attention_count }}</span>{% endif %}</button>
+      <button type="button" data-dashboard-jump="dashboard-overview">Charts</button>
+      <button type="button" data-dashboard-jump="dashboard-activity">Activity</button>
+    </nav>
+    <div class="dashboard-view-actions">
+      <button type="button" class="dashboard-tool" data-dashboard-privacy aria-pressed="false"><svg aria-hidden="true"><use href="#i-eye"/></svg><span>Hide amounts</span></button>
+      <button type="button" class="dashboard-tool" data-dashboard-focus aria-pressed="false"><svg aria-hidden="true"><use href="#i-dashboard"/></svg><span>Focus</span></button>
+      <details class="dashboard-display-menu">
+        <summary class="dashboard-tool"><svg aria-hidden="true"><use href="#i-settings"/></svg><span>Display</span></summary>
+        <div class="dashboard-display-popover"><strong>Make it yours</strong><span>Information density</span><div class="dashboard-segmented" aria-label="Information density"><button type="button" data-dashboard-density="comfortable" aria-pressed="true">Comfortable</button><button type="button" data-dashboard-density="compact" aria-pressed="false">Compact</button></div><button type="button" class="dashboard-reset" data-dashboard-reset>Reset dashboard view</button><small>Saved for your account on this device.</small></div>
+      </details>
+      <button type="button" class="dashboard-tool dashboard-refresh" data-dashboard-refresh aria-label="Refresh dashboard"><svg aria-hidden="true"><use href="#i-refresh"/></svg><span>Refresh</span></button>
+    </div>
+  </div>
+  <div class="dashboard-screen-reader" role="status" aria-live="polite" data-dashboard-announcement></div>
+  <div class="dashboard-focus-notice" hidden data-dashboard-focus-notice><span>Focus view · your summary, attention queue and charts.</span><button type="button" data-dashboard-exit-focus>Show all sections</button></div>
+
+  {% if executive_management %}
+  <details class="dashboard-section dashboard-metrics-hub dashboard-secondary" id="dashboard-details" data-dashboard-section="metrics">
+    <summary><span class="dashboard-section-icon"><svg aria-hidden="true"><use href="#i-analytics"/></svg></span><span class="dashboard-section-copy"><small>OWNER'S EXECUTIVE DASHBOARD</small><strong>Business details, on demand</strong><span>Today's movement, business position and financial controls.</span></span><span class="dashboard-section-meta"><span>24 metrics</span><b data-dashboard-section-label>Expand</b><svg aria-hidden="true"><use href="#i-chevron-down"/></svg></span></summary>
+    <div class="dashboard-section-body">
+      <div class="dashboard-metric-navigation"><div class="dashboard-metric-tabs" role="tablist" aria-label="Business metrics">
+        {% for key,label in [('today','Today'),('position','Business position'),('control','Financial controls')] %}<button type="button" role="tab" id="dashboard-tab-{{ key }}" aria-controls="dashboard-panel-{{ key }}" aria-selected="{{ 'true' if key == 'today' else 'false' }}" tabindex="{{ '0' if key == 'today' else '-1' }}" data-dashboard-tab="{{ key }}">{{ label }}</button>{% endfor %}
+      </div><a href="/reports" data-route="reports" class="dashboard-inline-link">Management reports <svg aria-hidden="true"><use href="#i-chevron-right"/></svg></a></div>
+      <div id="dashboard-panel-today" role="tabpanel" aria-labelledby="dashboard-tab-today" data-dashboard-tab-panel="today">
+        <p class="dashboard-tab-description">Today in UTC · money movement and management workload.</p>
+        <div class="dashboard-metric-grid">{% for label,value,kind,route in [('Income today',executive_management.today.income,'money','finance'),('Expenses today',executive_management.today.expenses,'money','finance'),('Net today',executive_management.today.net,'money','reports'),('Available cash',executive_management.today.available_cash,'money','finance'),('Pending approvals',executive_management.today.pending_approvals,'count','requests'),('New requests today',executive_management.today.new_requests,'count','requests'),('Outstanding payments',executive_management.today.outstanding_payments,'money','finance')] %}{{ metric(label,value,kind,route) }}{% endfor %}</div>
+      </div>
+      <div id="dashboard-panel-position" role="tabpanel" aria-labelledby="dashboard-tab-position" data-dashboard-tab-panel="position" hidden>
+        <p class="dashboard-tab-description">Current balances across your organization.</p>
+        <div class="dashboard-metric-grid">{{ metric('Accounts receivable',executive_management.executive.receivables) }}{{ metric('Accounts payable',executive_management.executive.payables) }}{{ metric('Inventory value',executive_management.executive.inventory_value,'money','inventory') }}{{ metric('Budget usage',executive_management.executive.budget_usage,'percent','reports') }}</div>
+      </div>
+      <div id="dashboard-panel-control" role="tabpanel" aria-labelledby="dashboard-tab-control" data-dashboard-tab-panel="control" hidden>
+        <p class="dashboard-tab-description">Income, expenses and net cover the last 12 calendar months, including this month. Balances, budgets and procurement reflect your current records.</p>
+        {% if financial_intelligence %}<div class="dashboard-metric-grid">{% for label,value,route in [('Income · last 12 months',financial_intelligence.income_total,'reports'),('Expenses · last 12 months',financial_intelligence.expense_total,'reports'),('Net · last 12 months',financial_intelligence.net,'reports'),('Active budgets',financial_intelligence.budget_total,'finance'),('Procurement budgets',financial_intelligence.procurement_budget,'reports'),('Actual procurement',financial_intelligence.procurement_actual,'procurement'),('Procurement variance',financial_intelligence.procurement_variance,'reports'),('Accounts receivable',financial_intelligence.ar_balance,'finance'),('Accounts payable',financial_intelligence.ap_balance,'finance'),('Inventory value',financial_intelligence.inventory_value,'inventory'),('Asset value',financial_intelligence.asset_value,'assets'),('Payroll paid',financial_intelligence.payroll_paid,'finance'),('Tax due',financial_intelligence.tax_due,'finance')] %}{{ metric(label,value,'money',route) }}{% endfor %}</div>{% endif %}
+      </div>
+    </div>
+  </details>
+
+  <div class="dashboard-work-grid">
+    <section class="dashboard-section dashboard-attention-panel" id="dashboard-attention" aria-labelledby="dashboard-attention-title">
+      <header class="dashboard-panel-heading"><div><p class="eyebrow">NEXT BEST ACTION</p><h2 id="dashboard-attention-title">Requires your attention <span class="dashboard-count">{{ executive_management.attention_count }}</span></h2><p>One place for approvals, evidence and operational risks.</p></div></header>
+      <div class="dashboard-attention-filters dashboard-segmented" aria-label="Filter attention queue"><button type="button" data-dashboard-priority="all" aria-pressed="true">All items</button><button type="button" data-dashboard-priority="3" aria-pressed="false">Urgent</button><button type="button" data-dashboard-priority="2" aria-pressed="false">Follow-up</button></div>
+      <div class="dashboard-attention-list">{% for item in executive_management.attention %}<a href="/{{ item.route }}" {% if item.section %}data-control-jump="{{ item.section }}"{% else %}data-route="{{ item.route }}"{% endif %} class="dashboard-attention-item" data-dashboard-attention-item data-priority="{{ item.rank }}"><span class="dashboard-priority-dot priority-{{ item.rank }}" aria-hidden="true"></span><div><span>{{ item.priority }}</span><strong>{{ item.title }}</strong><p data-private-activity>{{ item.detail }}</p></div>{% if item.metric %}<b>{{ item.metric }}</b>{% endif %}<svg aria-hidden="true"><use href="#i-chevron-right"/></svg></a>{% endfor %}</div>
+      <div class="dashboard-empty" data-dashboard-attention-empty {% if executive_management.attention_count %}hidden{% endif %}><svg aria-hidden="true"><use href="#i-check"/></svg><strong>{{ 'No items match this filter.' if executive_management.attention_count else 'You are all caught up.' }}</strong><p>{{ 'Try another priority to see more items.' if executive_management.attention_count else 'New approvals and management exceptions will appear here.' }}</p></div>
+      <button type="button" class="dashboard-show-more" data-dashboard-attention-more hidden>Show all items</button>
+    </section>
+
+    <details class="dashboard-section dashboard-departments-panel dashboard-secondary" id="dashboard-departments" data-dashboard-section="departments">
+      <summary><span class="dashboard-section-copy"><small>TEAM PERFORMANCE</small><strong>Department breakdown <span class="dashboard-count">{{ executive_management.departments|length }}</span></strong><span>Explore team activity, spending and budgets.</span></span><span class="dashboard-section-meta"><b data-dashboard-section-label>Expand</b><svg aria-hidden="true"><use href="#i-chevron-down"/></svg></span></summary>
+      <div class="dashboard-section-body">
+        <div class="dashboard-department-tools"><label class="dashboard-search"><svg aria-hidden="true"><use href="#i-search"/></svg><input type="search" placeholder="Find a department…" aria-label="Find a department" data-dashboard-department-search></label><label class="dashboard-sort"><span class="dashboard-screen-reader">Sort departments</span><select aria-label="Sort departments" data-dashboard-department-sort><option value="activity">Most active</option><option value="spend">Highest expenses</option><option value="pending">Pending approvals</option><option value="name">Name A–Z</option></select></label></div>
+        <div class="dashboard-department-filter"><div class="dashboard-segmented" aria-label="Department scope"><button type="button" data-dashboard-department-scope="all" aria-pressed="true">All departments</button><button type="button" data-dashboard-department-scope="active" aria-pressed="false">With activity</button></div><span data-dashboard-department-count>{{ executive_management.departments|length }} departments</span></div>
+        <div class="dashboard-department-list">{% for row in executive_management.departments %}
+          <details class="dashboard-department-row" data-dashboard-department="{{ row.id }}" data-name="{{ row.name }}" data-spend="{{ row.expenses }}" data-pending="{{ row.pending }}" data-activity="{{ row.requests + (1 if row.income or row.expenses or row.budget or row.actual_spent else 0) }}">
+            <summary><span class="dashboard-department-name"><strong>{{ row.name }}</strong><small>{{ row.requests }} request{{ 's' if row.requests != 1 else '' }}{% if row.pending %} · {{ row.pending }} pending{% endif %}</small></span><span class="dashboard-department-spend"><small>Expenses</small><b>{{ money(row.expenses) }}</b></span><svg aria-hidden="true"><use href="#i-chevron-down"/></svg></summary>
+            <div class="dashboard-department-detail"><dl>{% for label,value in [('Income',row.income),('Actual spent',row.actual_spent),('Approved amount',row.approved_amount),('Budget',row.budget),('Committed',row.committed),('Budget left',row.remaining_budget),('Net position',row.net)] %}<div><dt>{{ label }}</dt><dd>{{ money(value) }}</dd></div>{% endfor %}<div><dt>Budget used</dt><dd>{{ '{:,.1f}'.format(row.budget_usage) }}%</dd></div></dl>
+              {% if row.budget %}<div class="dashboard-budget-bar" role="meter" aria-label="Budget usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ [100, [0,row.budget_usage]|max]|min }}" aria-valuetext="{{ '{:,.1f}'.format(row.budget_usage) }} percent"><span style="width:{{ [100, [0,row.budget_usage]|max]|min }}%"></span></div>{% endif %}
+              <div class="dashboard-department-requests"><strong>Recent requests</strong>{% for req in row.recent_requests %}<a href="/requests" data-route="requests"><span><b>{{ req.title }}</b><small>{{ req.reference }} · {{ req.display_status }}</small>{% for item in req.items %}<small class="dashboard-request-item">{{ '{:g}'.format(item.quantity|float) }} {{ item.unit or 'unit' }} · {{ item.item_name }}</small>{% endfor %}</span><span>{{ money(req.estimated_total, req.currency) }}</span></a>{% else %}<p>No requests recorded for this department.</p>{% endfor %}</div>
+            </div>
+          </details>
+        {% endfor %}</div>
+        <div class="dashboard-empty" data-dashboard-department-empty {% if executive_management.departments %}hidden{% endif %}><svg aria-hidden="true"><use href="#i-search"/></svg><strong>No departments to show.</strong><p>Try another name or switch to all departments.</p></div>
+        <footer class="dashboard-department-footer"><button type="button" class="dashboard-show-more" data-dashboard-department-more hidden>Show all departments</button><a href="/departments" data-route="departments" class="dashboard-inline-link">Manage departments <svg aria-hidden="true"><use href="#i-chevron-right"/></svg></a></footer>
+      </div>
+    </details>
+  </div>
+  {% endif %}
+
+  {% include 'partials/management_workspace.html' %}
+
+  {% if income_workspace %}<article class="panel dashboard-income-detail"><div class="panel-head"><div><h2>Latest Money In</h2><p>Recent sales/income with source, department and the staff member who recorded it.</p></div><a href="/income" data-route="income" class="text-button">Open Income & Sales</a></div><div class="table-scroller"><table class="data-table"><thead><tr><th>Time</th><th>Income / Sale</th><th>Source</th><th>Department</th><th>Recorded By</th><th>Amount</th></tr></thead><tbody>{% for row in income_workspace.rows[:6] %}<tr><td><strong>{{ row.occurred_at.strftime('%d %b') }}</strong><small>{{ row.occurred_at.strftime('%H:%M') }}</small></td><td><strong>{{ row.description }}</strong><small>{{ row.category or row.display_type }} · {{ row.reference }}</small></td><td>{{ row.counterparty or 'Not specified' }}</td><td>{{ row.department.name if row.department else 'Organization' }}</td><td><strong>{{ row.created_by.display_name if row.created_by else 'Former user' }}</strong><small>{{ row.created_by.position if row.created_by and row.created_by.position else '' }}</small></td><td class="finance-money positive">+{{ money(row.amount,row.currency) }}</td></tr>{% else %}<tr><td colspan="6"><div class="empty-state-inline">Sales and income recorded by staff will appear here automatically.</div></td></tr>{% endfor %}</tbody></table></div>{% if performance_targets and performance_targets.rows %}<footer class="dashboard-income-targets">{% for item in performance_targets.rows[:4] %}<span><small>{{ item.row.period_type|title }} {{ item.row.target_type.replace('_',' ')|title }}</small><strong>{{ '{:,.1f}'.format(item.progress or 0) }}%</strong><i class="{{ 'positive-text' if item.variance >= 0 else 'negative-text' }}">{{ '+' if item.variance >= 0 else '' }}{{ current_user.organization.currency }} {{ '{:,.0f}'.format(item.variance) }}</i></span>{% endfor %}</footer>{% endif %}</article>{% endif %}
+
+  {% set owner_submitted_reports = staff_reports|selectattr('status','in',['submitted','acknowledged'])|list %}{% set owner_waiting_reports = staff_reports|selectattr('status','equalto','submitted')|list %}
+  <article class="panel dashboard-report-inbox"><div class="panel-head"><div><h2>Staff Report Inbox</h2><p>Daily, weekly, monthly and quarterly submissions from your team.</p></div><a href="/reports" data-route="reports" class="text-button">Open all reports{% if owner_waiting_reports %} · {{ owner_waiting_reports|length }} new{% endif %}</a></div><div class="dashboard-report-list">{% for report in owner_submitted_reports[:5] %}<a href="/reports" data-route="reports" class="dashboard-report-row"><span class="dashboard-report-avatar">{{ report.user.initials if report.user else '—' }}</span><span><b>{{ report.user.display_name if report.user else 'Former staff' }}</b><small>{{ report.department.name if report.department else 'No department' }} · {{ report.reference }}</small></span><span><b>{{ report.period_type|title }}</b><small>{{ report.period_start.strftime('%d %b') }} – {{ report.period_end.strftime('%d %b') }}</small></span><span class="status {{ 'success' if report.status == 'acknowledged' else 'warning' }}">{{ report.display_status }}</span><time>{{ report.submitted_at.strftime('%d %b · %H:%M') if report.submitted_at else '—' }}</time><svg><use href="#i-chevron-right"/></svg></a>{% else %}<div class="empty-state-inline">No staff reports submitted yet. New submissions will appear here automatically and trigger an owner alert.</div>{% endfor %}</div></article>
+
+  <!-- Established chart and table layouts are retained. -->
+  <div class="dashboard-grid main-overview-grid" id="dashboard-overview">
+    <article class="panel overview-panel"><div class="panel-head"><div><h2>Financial Overview</h2><p>Income, expenditure and net movement · this year</p></div><a href="/finance" data-route="finance" class="text-button">Open finance</a></div><div class="chart-wrap"><canvas class="overview-chart" data-chart="compare" data-income="{{ finance_chart.income|join(',') }}" data-expenses="{{ finance_chart.expenses|join(',') }}" width="1000" height="420" role="img" aria-label="Monthly income and expenditure chart"></canvas><span class="dashboard-chart-privacy" hidden>Chart hidden while amounts are private.</span></div></article>
+    <article class="panel department-spend-panel"><div class="panel-head"><div><h2>Inventory Position</h2><p>Current tracked stock and risk</p></div></div><div class="kpi-stack"><div><span>Inventory value</span><strong>{{ money(inventory_value) }}</strong></div><div><span>Low / reorder stock</span><strong>{{ low_stock_count }}</strong></div><div><span>Tracked inventory items</span><strong>{{ inventory_items|length }}</strong></div><div><span>Open requests</span><strong>{{ request_counts.submitted + request_counts.approved + request_counts.money_sent }}</strong></div></div></article>
+  </div>
+
+  <div class="dashboard-grid activity-grid" id="dashboard-activity">
+    <article class="panel requests-table-panel"><div class="panel-head"><div><h2>Live Requests</h2><p>Request → approval → money sent → purchase/evidence → final record</p></div><a href="/requests" data-route="requests" class="text-button">View all</a></div><div class="table-scroller"><table class="data-table"><thead><tr><th>Request</th><th>Requester</th><th>Department</th><th>Status</th><th>Amount</th><th>Created</th></tr></thead><tbody>{% for r in live_requests[:6] %}<tr><td><b>{{ r.title }}</b><small class="table-sub">{{ r.reference }}</small>{% for item in r.items %}<small class="table-sub dashboard-request-item">{{ '{:g}'.format(item.quantity|float) }} {{ item.unit or 'unit' }} · {{ item.item_name }} @ {{ money(item.unit_cost,r.currency) }}</small>{% endfor %}</td><td>{{ r.requester.display_name if r.requester else 'Unknown' }}</td><td>{{ r.department.name if r.department else '—' }}</td><td><span class="status {{ 'success' if r.status in ['approved','money_sent','fulfilled','verified'] else 'danger' if r.status == 'rejected' else 'warning' }}">{{ r.display_status }}</span></td><td><b>{{ money(r.estimated_total,r.currency) }}</b></td><td>{{ r.created_at.strftime('%d %b · %H:%M') }}</td></tr>{% else %}<tr><td colspan="6"><div class="empty-state-inline">No staff requests yet. Incoming requests will appear here automatically.</div></td></tr>{% endfor %}</tbody></table></div></article>
+    <article class="panel recent-activity-panel"><div class="panel-head"><div><h2>Live Staff Activity</h2><p>Owner-visible actions across the organization</p></div><a href="/audit" data-route="audit" class="text-button">Full timeline</a></div><div class="activity-list">{% for event in activity_events[:8] %}<div class="activity-item"><span class="activity-icon {{ 'success' if 'approved' in event.action or 'confirmed' in event.action else 'info' }}"><svg><use href="#i-audit"/></svg></span><div><strong>{{ event.title }}</strong><span data-private-activity>{{ event.description }}</span><small>{{ event.created_at.strftime('%d %b · %H:%M:%S') }}{% if event.actor %} · {{ event.actor.display_name }}{% endif %}</small></div></div>{% else %}<div class="empty-state-inline">Staff actions will appear here in real time.</div>{% endfor %}</div></article>
+  </div>
+</section>

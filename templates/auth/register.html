@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#07090f">
   <title>Create workspace · SAGE</title>
+  <script>
+    /* SAGE THEME PRE-PAINT: apply the saved appearance before CSS/browser paint so light/sky/sage/sand/slate never flash through dark on reload. */
+    (()=>{try{const colors={dark:'#050505',light:'#f6f7f9',sky:'#edf7ff',sage:'#f0f5f1',sand:'#f7f3eb',slate:'#111720'},saved=localStorage.getItem('sage-theme')||localStorage.getItem('vision-theme')||'dark',theme=Object.prototype.hasOwnProperty.call(colors,saved)?saved:'dark',html=document.documentElement;html.dataset.theme=theme;html.style.backgroundColor=colors[theme];html.style.colorScheme=['dark','slate'].includes(theme)?'dark':'light';const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute('content',colors[theme]);}catch(_){}})();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/vision.css') }}">
 </head>
@@ -12,10 +16,15 @@
     <!-- ================================================================ -->
     <!-- SAGE OWNER ONBOARDING HERO                                      -->
     <!-- ================================================================ -->
-    <section class="auth-brand-panel register-showcase">
-      <a href="/login" class="brand-link auth-brand"><span class="sage-native-brand auth-native-brand"><span class="sage-mark"><i></i></span><span class="sage-wordmark"><b>S</b><b class="sage-a" aria-hidden="true">Λ</b><b>G</b><b>E</b><small>SAGE</small></span></span></a>
-      <div class="auth-showcase"><span class="showcase-pill">Built for organizations and independent businesses</span><h1>Choose the setup that matches <em>how you actually work.</em></h1><p>SAGE can run a multi-department organization or a lean owner-operated business without forcing both into the same workflow.</p><ul class="showcase-list"><li><svg><use href="#i-check"/></svg>Organization workspace with automatic departments</li><li><svg><use href="#i-check"/></svg>Individual / entrepreneur business workspace</li><li><svg><use href="#i-check"/></svg>Live income, expense, stock, assets and reports</li><li><svg><use href="#i-check"/></svg>Add staff later when your business grows</li></ul></div>
-      <div class="auth-caption">One SAGE account · The right structure for your business</div>
+    <section class="auth-brand-panel register-showcase register-setup-rail">
+      <a href="/login" class="brand-link auth-brand"><span class="sage-native-brand auth-native-brand"><span class="sage-mark"><i></i></span><span class="sage-wordmark"><b>S</b><b class="sage-a" aria-hidden="true">Λ</b><b>G</b><b>E</b></span></span></a>
+      <div class="register-rail-orbit" aria-hidden="true">
+        <div class="register-orbit-track register-orbit-track-outer"><span class="register-orbit-node node-a"><svg><use href="#i-building"/></svg></span><span class="register-orbit-node node-b"><svg><use href="#i-finance"/></svg></span></div>
+        <div class="register-orbit-track register-orbit-track-inner"><span class="register-orbit-node node-c"><svg><use href="#i-users"/></svg></span><span class="register-orbit-node node-d"><svg><use href="#i-analytics"/></svg></span></div>
+        <span class="register-orbit-core"><span class="sage-mark"><i></i></span></span>
+      </div>
+      <div class="register-rail-copy"><span>SMART SETUP</span><strong>Built around your business.</strong><small>Organization or individual.</small></div>
+      <div class="register-rail-status"><span><i></i>Secure</span><span><i></i>Adaptive</span><span><i></i>Ready</span></div>
     </section>
 
     <!-- ================================================================ -->
@@ -24,7 +33,7 @@
     <section class="auth-form-panel owner-register-panel">
       <button class="icon-button auth-theme" id="authTheme"><svg class="sun-icon"><use href="#i-sun"/></svg><svg class="moon-icon"><use href="#i-moon"/></svg></button>
       <div class="auth-form-wrap register-wrap owner-register-wrap">
-        <div class="auth-logo-mobile"><span class="sage-native-brand auth-native-brand mobile"><span class="sage-mark"><i></i></span><span class="sage-wordmark"><b>S</b><b class="sage-a" aria-hidden="true">Λ</b><b>G</b><b>E</b><small>SAGE</small></span></span></div>
+        <div class="auth-logo-mobile"><span class="sage-native-brand auth-native-brand mobile"><span class="sage-mark"><i></i></span><span class="sage-wordmark"><b>S</b><b class="sage-a" aria-hidden="true">Λ</b><b>G</b><b>E</b></span></span></div>
         <div class="registration-heading"><div><span class="auth-kicker">OWNER REGISTRATION</span><h2>Create your SAGE workspace</h2><p>First choose whether SAGE is managing an organization or your own individual business.</p></div><span class="secure-chip"><svg><use href="#i-shield"/></svg>Secure setup</span></div>
 
         <div class="register-steps four-step" id="registerSteps"><button type="button" class="active" data-step-nav="1"><span>1</span>Owner</button><i></i><button type="button" data-step-nav="2"><span>2</span>Workspace</button><i></i><button type="button" data-step-nav="3"><span>3</span>Business</button><i></i><button type="button" data-step-nav="4"><span>4</span><b data-final-step-label>Structure</b></button></div>
@@ -52,7 +61,11 @@
           <section class="register-step" data-step="3">
             <div class="step-title"><strong data-business-step-title>Organization information</strong><small data-business-step-copy>Your business type determines SAGE's suggested departments and operational catalogue.</small></div>
             <label><span data-business-name-label>Organization / Business name</span><input name="organization_name" placeholder="e.g. Acme Holdings Ltd" required></label>
-            <div class="form-grid two"><label class="workspace-organization-only" data-organization-business-type>Business / Company type<select name="business_type" id="businessType">{% for item in business_types %}<option value="{{ item.key }}">{{ item.label }}</option>{% endfor %}</select></label><label class="workspace-individual-only" data-individual-business-type hidden>What kind of business do you run?<select name="individual_business_type" id="individualBusinessType">{% for item in individual_business_types %}<option value="{{ item.key }}">{{ item.label }}</option>{% endfor %}</select></label><label>Country<input name="country" value="Nigeria" required></label></div>
+            <div class="form-grid two">
+              <label class="workspace-organization-only business-picker-field" data-organization-business-type>Business / Company type<div class="business-smart-select" data-business-smart-select><input type="search" class="business-smart-search" placeholder="Search 30 organization types..." autocomplete="off" aria-label="Search organization type"><select name="business_type" id="businessType" data-business-native>{% for item in business_types %}<option value="{{ item.key }}" data-group="{{ item.group|default('Other') }}">{{ item.label }}</option>{% endfor %}</select><div class="business-smart-menu" role="listbox" hidden></div></div></label>
+              <label class="workspace-individual-only business-picker-field" data-individual-business-type hidden>What kind of business do you run?<div class="business-smart-select" data-business-smart-select><input type="search" class="business-smart-search" placeholder="Search 30 entrepreneur types..." autocomplete="off" aria-label="Search individual business type"><select name="individual_business_type" id="individualBusinessType" data-business-native>{% for item in individual_business_types %}<option value="{{ item.key }}" data-group="{{ item.group|default('Other') }}">{{ item.label }}</option>{% endfor %}</select><div class="business-smart-menu" role="listbox" hidden></div></div></label>
+              <label>Country<input name="country" value="Nigeria" required></label>
+            </div>
             <div class="form-grid three"><label>State / Region<input name="state" placeholder="e.g. FCT Abuja"></label><label>Currency<select name="currency"><option value="NGN">NGN · Nigerian Naira</option><option value="USD">USD · US Dollar</option><option value="GBP">GBP · Pound Sterling</option><option value="EUR">EUR · Euro</option></select></label><label class="workspace-organization-only" data-branch-field>Branches<input name="branch_count" type="number" min="1" value="1"></label></div>
             <div class="form-grid two"><label class="workspace-organization-only" data-size-field>Organization size<select name="employee_range"><option value="1-10">1–10 staff</option><option value="11-50">11–50 staff</option><option value="51-200">51–200 staff</option><option value="201-500">201–500 staff</option><option value="500+">500+ staff</option></select></label><label>Business address<input name="organization_address" placeholder="Primary business location"></label></div>
             <div class="step-actions"><button type="button" class="btn secondary" data-prev-step>Back</button><button type="button" class="btn primary" data-next-step><span data-structure-button-label>Choose departments</span> <svg><use href="#i-arrow-up"/></svg></button></div>
@@ -76,7 +89,27 @@
     </section>
   </div>
 
-  <div class="launch-overlay" id="registrationSuccess" aria-hidden="true"><div class="launch-scene"><div class="vision-orbit"><span class="orbit-core"><span></span></span><i class="orbit-ring one"><b></b></i><i class="orbit-ring two"><b></b></i><i class="orbit-ring three"><b></b></i></div><span class="launch-kicker">SAGE IS GETTING READY</span><h2 id="launchTitle">Building your workspace</h2><p id="launchStatus">Creating secure owner access...</p><div class="launch-progress"><span></span></div></div></div>
+  <div class="launch-overlay launch-premium-overlay" id="registrationSuccess" aria-hidden="true" data-launch-kind="owner">
+    <div class="launch-aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="launch-scene launch-premium-scene">
+      <div class="launch-setup-stage">
+        <div class="launch-icon-stage" aria-hidden="true">
+          <div class="launch-orbit-ring launch-orbit-ring-one"></div><div class="launch-orbit-ring launch-orbit-ring-two"></div>
+          <div class="launch-icon-orbit">
+            <span class="launch-icon-chip" style="--i:0"><b><svg><use href="#i-shield"/></svg></b></span>
+            <span class="launch-icon-chip" style="--i:1"><b><svg><use href="#i-building"/></svg></b></span>
+            <span class="launch-icon-chip" style="--i:2"><b><svg><use href="#i-users"/></svg></b></span>
+            <span class="launch-icon-chip" style="--i:3"><b><svg><use href="#i-wallet"/></svg></b></span>
+            <span class="launch-icon-chip" style="--i:4"><b><svg><use href="#i-inventory"/></svg></b></span>
+            <span class="launch-icon-chip" style="--i:5"><b><svg><use href="#i-analytics"/></svg></b></span>
+          </div>
+          <div class="launch-core-brand"><span class="sage-mark"><i></i></span><span class="launch-core-pulse"></span></div>
+        </div>
+        <div class="launch-copy-stage"><span class="launch-kicker">SAGE IS GETTING READY</span><h2 id="launchTitle">Building your workspace</h2><p id="launchStatus">Creating secure owner access...</p><div class="launch-progress"><span></span></div><div class="launch-step-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div>
+      </div>
+      <div class="launch-welcome-stage" aria-hidden="true"><span class="launch-welcome-kicker">WELCOME TO</span><div class="launch-sage-word" aria-label="SAGE"><span>S</span><span class="launch-sage-a">Λ</span><span>G</span><span>E</span></div><div class="launch-ready-mark"><svg><use href="#i-sparkles"/></svg></div></div>
+    </div>
+  </div>
 
   <script>window.SAGE_BUSINESS_TYPES = {{ business_types|tojson }}; window.SAGE_INDIVIDUAL_BUSINESS_TYPES = {{ individual_business_types|tojson }};</script>
   <script src="{{ url_for('static', filename='js/auth.js') }}"></script>

@@ -65,13 +65,11 @@ class Config:
     S3_SECRET_ACCESS_KEY = os.getenv("S3_SECRET_ACCESS_KEY", "").strip()
     S3_PRESIGNED_SECONDS = _integer("S3_PRESIGNED_SECONDS", 300)
 
-    EMAIL_NOTIFICATIONS_ENABLED = _flag("EMAIL_NOTIFICATIONS_ENABLED", "false")
-    SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
-    SMTP_PORT = _integer("SMTP_PORT", 587)
-    SMTP_USERNAME = os.getenv("SMTP_USERNAME", "").strip()
-    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
-    SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "").strip()
-    SMTP_USE_TLS = _flag("SMTP_USE_TLS", "true")
+    # EMAIL: SAGE accepts both its SMTP_* names and the MAIL_* names already used by the EMIS mail server.
+    SMTP_HOST = (os.getenv("SMTP_HOST") or os.getenv("MAIL_SERVER") or "").strip(); SMTP_PORT = int(os.getenv("SMTP_PORT") or os.getenv("MAIL_PORT") or 587)
+    SMTP_USERNAME = (os.getenv("SMTP_USERNAME") or os.getenv("MAIL_USERNAME") or os.getenv("SMTP_USER") or "").strip(); SMTP_PASSWORD = (os.getenv("SMTP_PASSWORD") or os.getenv("MAIL_PASSWORD") or os.getenv("SMTP_PASS") or "").strip()
+    SMTP_FROM_EMAIL = (os.getenv("SMTP_FROM_EMAIL") or os.getenv("EMAIL_FROM") or SMTP_USERNAME or "").strip(); SMTP_USE_TLS = _flag("SMTP_USE_TLS", os.getenv("MAIL_USE_TLS", "true")); SMTP_USE_SSL = _flag("SMTP_USE_SSL", os.getenv("MAIL_USE_SSL", "false"))
+    EMAIL_NOTIFICATIONS_ENABLED = _flag("EMAIL_NOTIFICATIONS_ENABLED", "true" if SMTP_HOST and SMTP_USERNAME and SMTP_PASSWORD else "false")
 
     WEB_PUSH_ENABLED = _flag("WEB_PUSH_ENABLED", "false")
     VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip()

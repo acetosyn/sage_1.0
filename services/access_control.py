@@ -2,12 +2,12 @@
 # Sidebar visibility and backend authorization are calculated together; department workers receive job-relevant pages without gaining owner-wide visibility.
 
 OWNER_ROLES = {"owner", "admin"}
-ALL_PAGES = {"dashboard", "workspace", "catalog", "analytics", "finance", "requests", "fulfillment", "procurement", "inventory", "assets", "departments", "staff", "reports", "audit", "settings", "operations"}
+ALL_PAGES = {"dashboard", "workspace", "catalog", "analytics", "income", "expenses", "finance", "requests", "fulfillment", "procurement", "inventory", "assets", "departments", "staff", "reports", "audit", "settings", "operations"}
 ROLE_PAGE_ACCESS = {
     "owner": ALL_PAGES, "admin": ALL_PAGES,
-    "finance": {"dashboard", "workspace", "catalog", "analytics", "finance", "requests", "fulfillment", "operations", "reports", "audit"},
-    "procurement": {"dashboard", "workspace", "catalog", "requests", "fulfillment", "procurement", "inventory", "assets", "operations", "reports"},
-    "department_head": {"dashboard", "workspace", "catalog", "requests", "fulfillment", "operations", "reports", "departments"}, "staff": {"dashboard", "workspace", "catalog", "requests", "fulfillment", "operations", "reports", "departments"},
+    "finance": {"dashboard", "workspace", "catalog", "analytics", "income", "expenses", "finance", "requests", "fulfillment", "operations", "reports", "audit"},
+    "procurement": {"dashboard", "workspace", "catalog", "income", "expenses", "requests", "fulfillment", "procurement", "inventory", "assets", "operations", "reports"},
+    "department_head": {"dashboard", "workspace", "catalog", "income", "expenses", "requests", "fulfillment", "operations", "reports", "departments"}, "staff": {"dashboard", "workspace", "catalog", "income", "requests", "fulfillment", "operations", "reports", "departments"},
 }
 
 # Department workers get operational screens relevant to physical custody/purchasing without inheriting organization-wide finance/admin rights.

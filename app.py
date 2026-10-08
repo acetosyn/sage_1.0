@@ -22,25 +22,32 @@ from packages.database import db, init_database
 from packages.security import init_security, roles_required
 from services.access_control import allowed_pages, can_access_page, filter_navigation, is_owner_admin
 from services.ai_service import ask_vision_ai
-from services.auth_service import authenticate, create_staff_invitation, register_owner, register_staff
+from services.auth_service import authenticate, change_password, create_staff_invitation, register_owner, register_staff
 from services.department_capabilities import department_profile, role_focus
 from services.department_service import create_department
 from services.department_operations import acknowledge_staff_report, create_department_operation, department_operations_profile, generate_staff_report, report_metrics
 from services.finance_service import create_budget, create_finance_account, create_forecast, create_payable, create_payroll, create_receivable, create_reconciliation, create_tax, finance_control_context, post_ledger_entry, settle_payable, settle_receivable
 from services.demo_data import NAV_ITEMS, PAGE_TITLES
-from services.notification_service import notify_user, record_activity
+from services.notification_service import notification_route, notify_user, record_activity
 from services.operations_service import FINANCE_TYPES, add_financial_record, analytics_context, create_request, decide_request, finance_summary, move_asset, move_stock, next_asset_tag, owner_dashboard_context, save_fulfillment, save_request_funding, scoped_department, verify_fulfillment
 from services.organization_catalog import BUSINESS_TYPES, INDIVIDUAL_BUSINESS_TYPES
 from services.item_catalog import department_catalog, organization_catalog_summary
 from services.platform_service import get_control, organization_rows, permanent_delete_organization, platform_summary, record_platform_admin, update_control
 from services.reporting_service import management_export_rows, reporting_context
 from services.export_service import build_report_export
-from services.management_service import assign_department_to_branch, audit_revision_context, branch_comparison_context, create_approval_rule, create_branch, executive_dashboard_context, management_anomaly_context, management_settings_context, procurement_management_context
+from services.management_service import assign_department_to_branch, audit_revision_context, branch_comparison_context, can_actor_approve_request, create_approval_rule, create_branch, executive_dashboard_context, management_anomaly_context, management_settings_context, procurement_management_context
 from services.briefing_service import build_daily_briefing
 from services.push_service import disable_subscription, public_push_config, push_enabled, save_subscription
 from services.production_service import apply_retention_policy, apply_security_headers, health_snapshot, install_proxy_support, production_warnings
 from services.storage_service import attachment_response
 from services.workspace_service import individual_dashboard_context, request_management_context, workspace_profile_context
+from services.owner_control_service import scoped_finance_summary
+from services.income_service import income_export_rows, income_workspace_context
+from services.expense_service import expense_export_rows, expense_workspace_context
+from services.performance_service import performance_target_context, save_performance_target
+from services.attention_service import attention_additions
+from services.audit_service import install_audit_tracking
+from modules.control_routes import register_control_routes
 
 # ==========================================================
 # PATHS / FLASK APPLICATION
@@ -151,6 +158,13 @@ with app.app_context():
     Path(app.config["STORAGE_DIR"]).mkdir(parents=True, exist_ok=True); db.create_all() if app.config.get("AUTO_CREATE_SCHEMA", True) else None; PlatformOwnerControl.query.filter(PlatformOwnerControl.status.in_(["restricted", "deleted"])).update({"status": "disabled"}, synchronize_session=False); db.session.commit(); print(f"[SAGE] Database backend: {app.extensions.get('vision_database_label', database_label)}")
     for warning in production_warnings(app): app.logger.warning("PRODUCTION CHECK: %s", warning)
 
+install_audit_tracking(app)
+register_control_routes(app)
+
+@app.before_request
+def bind_audit_actor():
+    db.session.info["sage_actor_id"] = current_user.id if current_user.is_authenticated else None
+
 # ==========================================================
 # SHARED PAGE CONTEXT / TENANT SCOPING
 # ==========================================================
@@ -204,18 +218,18 @@ def apply_private_cache_policy(response):
 
 def _requests_for_user(user, limit=100):
     query = PurchaseRequest.query.filter_by(organization_id=user.organization_id)
-    if user.role not in {"owner", "admin", "finance", "procurement"}: query = query.filter(PurchaseRequest.department_id == user.department_id)
+    if user.role not in {"owner", "admin", "finance", "procurement"}: query = query.filter(PurchaseRequest.department_id == user.department_id) if user.department_id else query.filter(PurchaseRequest.requester_id == user.id)
     return query.order_by(PurchaseRequest.created_at.desc()).limit(limit).all()
 
 def _inventory_for_user(user):
     query = InventoryItem.query.filter_by(organization_id=user.organization_id)
-    if user.role not in {"owner", "admin", "finance", "procurement"}: query = query.filter(InventoryItem.department_id == user.department_id)
+    if user.role not in {"owner", "admin", "finance", "procurement"}: query = query.filter(InventoryItem.department_id == user.department_id) if user.department_id else query.filter(InventoryItem.added_by_id == user.id)
     return query.order_by(InventoryItem.updated_at.desc()).all()
 
 
 def _assets_for_user(user):
     query = AssetItem.query.filter_by(organization_id=user.organization_id)
-    if user.role not in {"owner", "admin", "finance", "procurement"}: query = query.filter(AssetItem.department_id == user.department_id)
+    if user.role not in {"owner", "admin", "finance", "procurement"}: query = query.filter(AssetItem.department_id == user.department_id) if user.department_id else query.filter(AssetItem.custodian_user_id == user.id)
     return query.order_by(AssetItem.updated_at.desc()).all()
 
 
@@ -226,12 +240,12 @@ def _asset_movements_for_user(user, limit=80):
 
 def _stock_movements_for_user(user, limit=80):
     query = StockMovement.query.join(InventoryItem, StockMovement.inventory_item_id == InventoryItem.id).filter(StockMovement.organization_id == user.organization_id)
-    if user.role not in {"owner", "admin", "finance", "procurement"}: query = query.filter(InventoryItem.department_id == user.department_id)
+    if user.role not in {"owner", "admin", "finance", "procurement"}: query = query.filter(InventoryItem.department_id == user.department_id) if user.department_id else query.filter(InventoryItem.added_by_id == user.id)
     return query.order_by(StockMovement.created_at.desc()).limit(limit).all()
 
 def _activity_for_user(user, limit=100):
     query = ActivityEvent.query.filter_by(organization_id=user.organization_id)
-    if user.role not in {"owner", "admin", "finance"}: query = query.filter(ActivityEvent.department_id == user.department_id)
+    if user.role not in {"owner", "admin", "finance"}: query = query.filter(ActivityEvent.department_id == user.department_id) if user.department_id else query.filter(ActivityEvent.actor_id == user.id)
     return query.order_by(ActivityEvent.created_at.desc()).limit(limit).all()
 
 def page_context(page):
@@ -243,8 +257,12 @@ def page_context(page):
     all_staff = User.query.filter_by(organization_id=current_user.organization_id).order_by(User.created_at.desc()).all() if owner_admin else [current_user]
     staff_users = [user for user in all_staff if user.status != "deleted"]; archived_staff_users = [user for user in all_staff if user.status == "deleted"]
     staff_stats = {"total": len(all_staff), "active": sum(1 for user in all_staff if user.status == "active"), "suspended": sum(1 for user in all_staff if user.status == "suspended"), "deleted": len(archived_staff_users), "departments": len({user.department_id for user in all_staff if user.department_id})}
-    live_requests, inventory_items, asset_items, activity_events = _requests_for_user(current_user), _inventory_for_user(current_user), _assets_for_user(current_user), _activity_for_user(current_user)
-    request_counts = {status: sum(1 for row in live_requests if row.status == status) for status in {"draft", "submitted", "approved", "money_sent", "fulfilled", "verified", "rejected"}}
+    live_requests, inventory_items, asset_items, activity_events = _requests_for_user(current_user, None if page == "requests" else 100), _inventory_for_user(current_user), _assets_for_user(current_user), _activity_for_user(current_user)
+    count_query = db.session.query(PurchaseRequest.status, func.count(PurchaseRequest.id)).filter(PurchaseRequest.organization_id == current_user.organization_id)
+    if current_user.role not in {"owner", "admin", "finance", "procurement"}:
+        count_query = count_query.filter(PurchaseRequest.department_id == current_user.department_id) if current_user.department_id else count_query.filter(PurchaseRequest.requester_id == current_user.id)
+    counted = dict(count_query.group_by(PurchaseRequest.status).all())
+    request_counts = {status: counted.get(status,0) for status in {"draft", "submitted", "approved", "money_sent", "fulfilled", "verified", "rejected"}}
     request_counts["completed"] = request_counts["fulfilled"] + request_counts["verified"]
     attachments = Attachment.query.filter_by(organization_id=current_user.organization_id, entity_type="fulfillment").order_by(Attachment.created_at.desc()).all(); fulfillment_attachments, fulfillment_evidence = {}, {}
     for attachment in attachments:
@@ -255,18 +273,22 @@ def page_context(page):
     workspace_profile_data = department_profile(department_name); permitted_pages = allowed_pages(current_user); workspace_profile_data["tools"] = [tool for tool in workspace_profile_data.get("tools", []) if tool.get("action") == "request" or tool.get("route") in permitted_pages]
     operation_query = DepartmentOperation.query.filter_by(organization_id=current_user.organization_id); operation_query = operation_query if owner_admin else operation_query.filter_by(department_id=current_user.department_id); department_operations = operation_query.order_by(DepartmentOperation.occurred_at.desc()).limit(120).all()
     report_query = StaffReport.query.filter_by(organization_id=current_user.organization_id); report_query = report_query.order_by(StaffReport.created_at.desc()) if owner_admin else report_query.filter_by(user_id=current_user.id).order_by(StaffReport.created_at.desc()); staff_reports = report_query.limit(100).all()
-    today_report_metrics = report_metrics(current_user, "daily") if not owner_admin else None; week_report_metrics = report_metrics(current_user, "weekly") if not owner_admin else None
+    today_report_metrics = report_metrics(current_user, "daily") if not owner_admin else None; week_report_metrics = report_metrics(current_user, "weekly") if not owner_admin else None; month_report_metrics = report_metrics(current_user, "monthly") if not owner_admin else None; quarter_report_metrics = report_metrics(current_user, "quarterly") if not owner_admin else None
     operation_templates = department_operations_profile(department_name) if department_name else []
     if "operations" in permitted_pages and not any(tool.get("route") == "operations" for tool in workspace_profile_data.get("tools", [])): workspace_profile_data.setdefault("tools", []).insert(0, {"label":"Department Operations","detail":"Record job-specific work, usage, incidents, movements and accountable activity.","icon":workspace_profile_data.get("icon","briefcase"),"route":"operations"})
-    if "reports" in permitted_pages and not any(tool.get("route") == "reports" for tool in workspace_profile_data.get("tools", [])): workspace_profile_data.setdefault("tools", []).append({"label":"My Activity Reports","detail":"Generate daily or weekly reports from your real SAGE activity.","icon":"reports","route":"reports"})
-    sage_workspace = workspace_profile_context(current_user.organization); individual_business = individual_dashboard_context(current_user) if current_user.role == "owner" and sage_workspace["is_individual"] and page == "dashboard" else None; request_management = request_management_context(current_user, live_requests) if owner_admin and page in {"dashboard", "requests"} else None; executive_management = executive_dashboard_context(current_user) if owner_admin and not sage_workspace["is_individual"] and page == "dashboard" else None
+    if "reports" in permitted_pages and not any(tool.get("route") == "reports" for tool in workspace_profile_data.get("tools", [])): workspace_profile_data.setdefault("tools", []).append({"label":"My Activity Reports","detail":"Generate daily, weekly, monthly or quarterly reports from your real SAGE activity.","icon":"reports","route":"reports"})
+    sage_workspace = workspace_profile_context(current_user.organization); individual_business = individual_dashboard_context(current_user) if current_user.role == "owner" and sage_workspace["is_individual"] and page == "dashboard" else None; request_management = request_management_context(current_user, live_requests) if owner_admin and page in {"dashboard", "requests"} else None; executive_management = executive_dashboard_context(current_user) if owner_admin and page == "dashboard" else None
+    if executive_management:
+        executive_management["attention"].extend(attention_additions(current_user))
+        executive_management["attention"].sort(key=lambda item:item["rank"], reverse=True)
+        executive_management["attention_count"] = len(executive_management["attention"])
     # SAGE PULSE BOOTSTRAP: build the once-per-login recap on the server for full page loads so the visible Pulse does not depend only on a delayed browser fetch.
     briefing_token = str(session.get("sage_daily_briefing_token") or ""); briefing_ack = str(session.get("sage_daily_briefing_ack") or ""); boot_briefing = None
     if request.headers.get("X-Sage-Partial") != "1" and briefing_token and briefing_ack != briefing_token:
         try: boot_briefing = {"show": True, "briefing_token": briefing_token, **build_daily_briefing(current_user)}
         except Exception as exc: app.logger.warning("SAGE Pulse bootstrap skipped: %s", exc)
-    context = {"page": page, "page_title": title, "page_subtitle": subtitle, "nav_items": filter_navigation(NAV_ITEMS, current_user), "departments": departments, "organization_departments": organization_departments, "asset_custodians": User.query.filter_by(organization_id=current_user.organization_id, status="active").order_by(User.first_name.asc(), User.last_name.asc()).all(), "staff_users": staff_users, "archived_staff_users": archived_staff_users, "staff_stats": staff_stats, "owner_admin": owner_admin, "business_types": BUSINESS_TYPES, "live_requests": live_requests, "request_counts": request_counts, "inventory_items": inventory_items, "asset_items": asset_items, "asset_value": sum(item.total_value for item in asset_items), "asset_movements": _asset_movements_for_user(current_user), "stock_movements": _stock_movements_for_user(current_user), "granted_requests": [row for row in live_requests if row.status in {"approved", "money_sent", "fulfilled", "verified"}], "activity_events": activity_events, "fulfillment_attachments": fulfillment_attachments, "fulfillment_evidence": fulfillment_evidence, "finance_summary": finance_summary(current_user.organization_id), "catalog_items": custom_catalog_items, "request_catalog_items": request_catalog_items, "department_catalog": department_catalog_info, "organization_catalog": organization_catalog_summary(current_user.organization.business_type), "notifications": Notification.query.filter_by(organization_id=current_user.organization_id, user_id=current_user.id).order_by(Notification.created_at.desc()).limit(12).all(), "unread_notifications": Notification.query.filter_by(organization_id=current_user.organization_id, user_id=current_user.id, is_read=False).count(), "workspace_profile": workspace_profile_data, "role_focus": role_focus(current_user.position or current_user.role_label, department_name), "finance_types": sorted(FINANCE_TYPES), "operation_templates": operation_templates, "department_operations": department_operations, "staff_reports": staff_reports, "today_report_metrics": today_report_metrics, "week_report_metrics": week_report_metrics, "finance_control": finance_control_context(current_user) if page == "finance" else None, "reporting": reporting_context(current_user) if page == "reports" else None, "financial_intelligence": reporting_context(current_user) if page in {"dashboard", "requests", "fulfillment"} else None, "push_enabled": push_enabled(app), "sage_workspace": sage_workspace, "workspace_mode": sage_workspace["mode"], "individual_business": individual_business, "request_management": request_management, "executive_management": executive_management, "procurement_management": procurement_management_context(current_user) if page == "procurement" and owner_admin else None, "management_settings": management_settings_context(current_user) if page == "settings" and owner_admin else None, "branch_management": branch_comparison_context(current_user) if page == "reports" and owner_admin else None, "audit_revisions": audit_revision_context(current_user) if page == "audit" and owner_admin else None, "management_anomalies": management_anomaly_context(current_user) if page in {"analytics", "audit"} and owner_admin else None, "boot_briefing": boot_briefing}
-    context.update(owner_dashboard_context(current_user)); context.update({"analytics": analytics_context(current_user)}); return context
+    context = {"page": page, "page_title": title, "page_subtitle": subtitle, "nav_items": filter_navigation(NAV_ITEMS, current_user), "departments": departments, "organization_departments": organization_departments, "asset_custodians": User.query.filter_by(organization_id=current_user.organization_id, status="active").order_by(User.first_name.asc(), User.last_name.asc()).all(), "staff_users": staff_users, "archived_staff_users": archived_staff_users, "staff_stats": staff_stats, "owner_admin": owner_admin, "business_types": BUSINESS_TYPES, "live_requests": live_requests, "request_counts": request_counts, "inventory_items": inventory_items, "asset_items": asset_items, "asset_value": sum(item.total_value for item in asset_items), "asset_movements": _asset_movements_for_user(current_user), "stock_movements": _stock_movements_for_user(current_user), "granted_requests": [row for row in live_requests if row.status in {"approved", "money_sent", "fulfilled", "verified"}], "activity_events": activity_events, "fulfillment_attachments": fulfillment_attachments, "fulfillment_evidence": fulfillment_evidence, "finance_summary": finance_summary(current_user.organization_id), "catalog_items": custom_catalog_items, "request_catalog_items": request_catalog_items, "department_catalog": department_catalog_info, "organization_catalog": organization_catalog_summary(current_user.organization.business_type), "notifications": Notification.query.filter_by(organization_id=current_user.organization_id, user_id=current_user.id).order_by(Notification.created_at.desc()).limit(12).all(), "unread_notifications": Notification.query.filter_by(organization_id=current_user.organization_id, user_id=current_user.id, is_read=False).count(), "workspace_profile": workspace_profile_data, "role_focus": role_focus(current_user.position or current_user.role_label, department_name), "finance_types": sorted(FINANCE_TYPES), "operation_templates": operation_templates, "department_operations": department_operations, "staff_reports": staff_reports, "today_report_metrics": today_report_metrics, "week_report_metrics": week_report_metrics, "month_report_metrics": month_report_metrics, "quarter_report_metrics": quarter_report_metrics, "finance_control": finance_control_context(current_user) if page in {"finance", "income", "expenses"} and current_user.role in {"owner", "admin", "finance"} else None, "income_workspace": income_workspace_context(current_user) if page == "income" or (page == "dashboard" and owner_admin) else None, "expense_workspace": expense_workspace_context(current_user) if page == "expenses" else None, "performance_targets": performance_target_context(current_user) if page in {"income", "dashboard"} and owner_admin else None, "reporting": reporting_context(current_user) if page == "reports" else None, "financial_intelligence": reporting_context(current_user) if page in {"dashboard", "requests", "fulfillment"} else None, "push_enabled": push_enabled(app), "sage_workspace": sage_workspace, "workspace_mode": sage_workspace["mode"], "individual_business": individual_business, "request_management": request_management, "executive_management": executive_management, "procurement_management": procurement_management_context(current_user) if page == "procurement" and owner_admin else None, "management_settings": management_settings_context(current_user) if page == "settings" and owner_admin else None, "branch_management": branch_comparison_context(current_user) if page == "reports" and owner_admin else None, "audit_revisions": audit_revision_context(current_user) if page == "audit" and owner_admin else None, "management_anomalies": management_anomaly_context(current_user) if page in {"analytics", "audit"} and owner_admin else None, "boot_briefing": boot_briefing}
+    context.update(owner_dashboard_context(current_user)); context.update({"analytics": analytics_context(current_user), "staff_finance": scoped_finance_summary(current_user), "approval_permissions": {row.id: can_actor_approve_request(current_user, row)[0] for row in live_requests if row.status == 'submitted'}}); return context
 
 def render_vision_page(page): return render_template("app_shell.html", **page_context(page))
 def json_error(message, status=400): return jsonify({"ok": False, "message": str(message)}), status
@@ -291,6 +313,50 @@ def _staff_target_or_404(user_id):
 
 def _platform_admin_authenticated(): return bool(session.get("sage_platform_admin") is True)
 def _platform_admin_username(): return str(session.get("sage_platform_admin_username") or app.config.get("PLATFORM_ADMIN_USERNAME") or "developer")
+
+# ==========================================================
+# PLATFORM FINANCIAL ACCOUNTABILITY TRACE
+# Developer visibility is built from the same immutable tenant ActivityEvent stream used by Owner audit/notifications.
+# No second financial ledger is created here; this is a forensic read-model showing who did what, where and when.
+# ==========================================================
+
+PLATFORM_FINANCIAL_ENTITIES = {"request", "fulfillment", "financial_record", "finance_account", "finance_ledger", "budget", "receivable", "payable", "reconciliation", "payroll", "tax", "forecast", "finance_performance_target", "direct_purchase"}
+PLATFORM_FINANCIAL_ACTION_HINTS = ("finance_", "request_", "funding", "payment", "budget", "receivable", "payable", "reconcil", "payroll", "tax_", "forecast", "performance_target", "income", "expense", "revenue", "purchase", "fulfillment", "verified")
+
+def _platform_is_financial_event(event):
+    action, entity_type = str(event.action or "").lower(), str(event.entity_type or "").lower()
+    return entity_type in PLATFORM_FINANCIAL_ENTITIES or any(token in action for token in PLATFORM_FINANCIAL_ACTION_HINTS)
+
+def _platform_financial_category(event):
+    action, title, details = str(event.action or "").lower(), str(event.title or "").lower(), (event.details_json or {})
+    if "approve" in action or "reject" in action: return "approval"
+    if "fund" in action or "money_sent" in action: return "funding"
+    if "reconcil" in action: return "reconciliation"
+    if "budget" in action or "target" in action: return "budget"
+    if "receivable" in action or "payable" in action or "payment" in action: return "settlement"
+    if details.get("direction") == "in" or "money in" in title or "income" in action or "revenue" in action: return "money_in"
+    if details.get("direction") == "out" or "expense" in action or "payroll" in action or "tax" in action: return "money_out"
+    return "financial"
+
+def _platform_financial_rows(limit=220):
+    candidates = ActivityEvent.query.order_by(ActivityEvent.created_at.desc()).limit(max(700, limit * 4)).all(); events = [row for row in candidates if _platform_is_financial_event(row)][:limit]
+    org_ids = {row.organization_id for row in events}; organizations = {row.id: row for row in Organization.query.filter(Organization.id.in_(org_ids)).all()} if org_ids else {}; request_ids = {row.entity_id for row in events if row.entity_type == "request" and row.entity_id}; requests = {row.id: row for row in PurchaseRequest.query.filter(PurchaseRequest.id.in_(request_ids)).all()} if request_ids else {}; rows = []
+    amount_keys = ("amount", "approved_budget", "amount_sent", "balance", "budget", "net_pay", "tax_amount", "variance")
+    for event in events:
+        details, actor, org = event.details_json or {}, event.actor, organizations.get(event.organization_id); amount = next((details.get(key) for key in amount_keys if details.get(key) not in (None, "")), None); reference = details.get("reference") or details.get("payment_reference") or details.get("external_reference") or (event.entity_id[:8].upper() if event.entity_id else "—"); category = _platform_financial_category(event); flag = "Tracked"
+        request_row = requests.get(event.entity_id) if event.entity_type == "request" else None
+        if request_row and "approve" in str(event.action or "").lower() and request_row.requester_id and request_row.requester_id == event.actor_id: flag = "SELF APPROVAL"
+        currency = org.currency if org else "NGN"
+        try: amount_label = f"{currency} {float(amount):,.2f}" if amount is not None else "—"
+        except (TypeError, ValueError): amount_label = str(amount or "—")
+        role = actor.role_label if actor else "System"; scope = "management" if actor and actor.role in {"owner", "admin"} else ("staff" if actor else "system")
+        rows.append({"id": event.id, "organization": org.name if org else "Unknown organization", "actor_name": actor.display_name if actor else "System", "actor_role": role, "actor_scope": scope, "department": event.department.name if event.department else "Organization-wide", "action": str(event.action or "").replace("_", " ").title(), "title": event.title, "description": event.description or "", "category": category, "reference": reference, "amount_label": amount_label, "flag": flag, "ip_address": event.ip_address or "—", "user_agent": event.user_agent or "", "created_at": event.created_at})
+    summary = {"total": len(rows), "management": sum(1 for row in rows if row["actor_scope"] == "management"), "staff": sum(1 for row in rows if row["actor_scope"] == "staff"), "approvals": sum(1 for row in rows if row["category"] in {"approval", "funding"})}
+    return rows, summary
+
+def _platform_activity_payload(row, organization_name=None):
+    actor, details = row.actor, row.details_json or {}; org_name = organization_name or (actor.organization.name if actor and actor.organization else "Unknown organization")
+    return {"id": row.id, "organization_id": row.organization_id, "organization": org_name, "title": row.title, "description": row.description or "", "action": row.action, "entity_type": row.entity_type, "entity_id": row.entity_id, "details": details, "financial": _platform_is_financial_event(row), "financial_category": _platform_financial_category(row) if _platform_is_financial_event(row) else None, "created_at": row.created_at.isoformat(), "actor": actor.display_name if actor else "System", "actor_role": actor.role_label if actor else "System", "actor_scope": "management" if actor and actor.role in {"owner", "admin"} else ("staff" if actor else "system"), "department": row.department.name if row.department else "Organization-wide", "ip_address": row.ip_address or "—", "user_agent": row.user_agent or ""}
 def _platform_admin_required():
     if not _platform_admin_authenticated(): abort(401)
 
@@ -319,8 +385,17 @@ def platform_admin_logout():
 def platform_admin_dashboard():
     if not _platform_admin_authenticated(): return redirect(url_for("platform_admin_login"))
     search = str(request.args.get("q") or "").strip(); status = str(request.args.get("status") or "all").strip().lower()
-    rows = organization_rows(search=search, status=status); audits = PlatformAdminAudit.query.order_by(PlatformAdminAudit.created_at.desc()).limit(30).all(); activity = ActivityEvent.query.order_by(ActivityEvent.created_at.desc()).limit(40).all()
-    return render_template("platform_admin/dashboard.html", owner_rows=rows, platform_summary=platform_summary(), platform_audits=audits, platform_activity=activity, search=search, status_filter=status, admin_username=_platform_admin_username())
+    rows = organization_rows(search=search, status=status); activity = ActivityEvent.query.order_by(ActivityEvent.created_at.desc()).limit(40).all(); platform_users = User.query.order_by(User.created_at.desc()).limit(1500).all(); financial_activity, financial_summary = _platform_financial_rows()
+    return render_template("platform_admin/dashboard.html", owner_rows=rows, platform_summary=platform_summary(), platform_activity=activity, platform_users=platform_users, platform_financial_activity=financial_activity, platform_financial_summary=financial_summary, search=search, status_filter=status, admin_username=_platform_admin_username())
+
+@app.post("/platform-admin/api/users/<user_id>/reset-password")
+@rate_limit("20 per hour")
+def platform_admin_reset_user_password(user_id):
+    """Generate a one-time temporary password for support; SAGE never exposes stored password hashes or recoverable plaintext passwords."""
+    _platform_admin_required(); user = User.query.filter_by(id=user_id).first()
+    if not user: abort(404)
+    temporary_password = f"Sage!{secrets.token_urlsafe(9)}"; user.set_password(temporary_password); record_platform_admin(_platform_admin_username(), "user_password_reset", f"Reset sign-in password for {user.display_name} ({user.email}).", user.organization_id, commit=False); db.session.commit()
+    return jsonify({"ok": True, "message": "Temporary password created. It is shown only in this response.", "user": {"id": user.id, "name": user.display_name, "email": user.email, "organization": user.organization.name if user.organization else "—"}, "temporary_password": temporary_password})
 
 @app.get("/platform-admin/api/owners/<organization_id>/detail")
 def platform_admin_owner_detail(organization_id):
@@ -361,7 +436,7 @@ def platform_admin_export_owners():
 @app.get("/platform-admin/api/activity")
 def platform_admin_activity():
     _platform_admin_required(); rows = ActivityEvent.query.order_by(ActivityEvent.created_at.desc()).limit(50).all(); org_names = {org.id: org.name for org in Organization.query.filter(Organization.id.in_({row.organization_id for row in rows})).all()} if rows else {}
-    return jsonify({"ok": True, "events": [{"id": row.id, "organization_id": row.organization_id, "organization": org_names.get(row.organization_id, "Unknown organization"), "title": row.title, "description": row.description or "", "action": row.action, "created_at": row.created_at.isoformat(), "actor": row.actor.display_name if row.actor else "System"} for row in rows]})
+    return jsonify({"ok": True, "events": [_platform_activity_payload(row, org_names.get(row.organization_id, "Unknown organization")) for row in rows]})
 
 @app.get("/platform-admin/api/activity/stream")
 def platform_admin_activity_stream():
@@ -373,7 +448,7 @@ def platform_admin_activity_stream():
         while True:
             db.session.remove(); rows = ActivityEvent.query.order_by(ActivityEvent.created_at.desc()).limit(60).all(); fresh = [row for row in reversed(rows) if row.id not in seen]
             for row in fresh:
-                org = Organization.query.filter_by(id=row.organization_id).first(); payload = {"id": row.id, "organization_id": row.organization_id, "organization": org.name if org else "Unknown organization", "title": row.title, "description": row.description or "", "action": row.action, "created_at": row.created_at.isoformat(), "actor": row.actor.display_name if row.actor else "System"}; seen.add(row.id); yield f"id: {row.id}\nevent: activity\ndata: {json.dumps(payload)}\n\n"
+                org = Organization.query.filter_by(id=row.organization_id).first(); payload = _platform_activity_payload(row, org.name if org else "Unknown organization"); seen.add(row.id); yield f"id: {row.id}\nevent: activity\ndata: {json.dumps(payload)}\n\n"
             heartbeat += 1
             if heartbeat % 10 == 0: yield "event: heartbeat\ndata: {}\n\n"
             if len(seen) > 500: seen = {row.id for row in rows}
@@ -434,6 +509,19 @@ def api_login():
     except ValueError as error: return json_error(error, 403)
     except Exception: app.logger.exception("Login failed"); return json_error("Sign in could not be completed. Please try again.", 500)
 
+@app.post("/api/auth/change-password")
+@rate_limit("8 per minute")
+def api_change_password():
+    """Public sign-in helper: verified users may change their password without changing their email/login identifier."""
+    payload = request.get_json(silent=True) or {}
+    try:
+        new_password, confirmation = str(payload.get("new_password") or ""), str(payload.get("confirm_password") or "")
+        if new_password != confirmation: return json_error("New password and confirmation do not match.")
+        user = change_password(payload.get("email"), payload.get("current_password"), new_password); record_activity(app, user, "password_changed", "Password changed", f"{user.display_name} changed their SAGE sign-in password.", "user", user.id, {"email": user.email}, notify_owner=True, email_owner=False, level="info"); db.session.commit()
+        return jsonify({"ok": True, "message": "Password changed successfully. Your email/login remains the same."})
+    except ValueError as error: db.session.rollback(); return json_error(error, 400)
+    except Exception: db.session.rollback(); app.logger.exception("Password change failed"); return json_error("Password could not be changed. Please try again.", 500)
+
 @app.post("/api/auth/register-staff/<token>")
 @rate_limit("10 per minute")
 def api_register_staff(token):
@@ -475,8 +563,15 @@ def api_daily_briefing_ack():
 @roles_required("owner", "admin")
 def api_staff_invite():
     try:
-        invitation = create_staff_invitation(current_user, request.get_json(silent=True) or {}); invite_url = url_for("staff_register", token=invitation.token, _external=True)
-        return jsonify({"ok": True, "message": "Staff invitation created.", "invite_url": invite_url, "email": invitation.email})
+        payload = request.get_json(silent=True) or {}; invitation = create_staff_invitation(current_user, payload); invite_url = url_for("staff_register", token=invitation.token, _external=True); delivery = str(payload.get("delivery") or "link").strip().lower()
+        mailed = False
+        if delivery == "email":
+            from services.email_service import send_staff_invitation_email
+            mailed = send_staff_invitation_email(app, invitation, invite_url, current_user)
+            record_activity(app, current_user, "staff_invitation_emailed", "Staff invitation emailed", f"{current_user.display_name} sent a SAGE registration invitation to {invitation.email} for {invitation.department.name if invitation.department else 'the organization'}.", "user", invitation.id, {"email": invitation.email, "department": invitation.department.name if invitation.department else None, "role": invitation.role}, notify_owner=False)
+            db.session.commit()
+        message = "Invitation email queued successfully." if mailed else ("Invitation created, but email is not configured. Copy and send the private link below." if delivery == "email" else "Staff invitation created. Copy the private link or use Mail Invite.")
+        return jsonify({"ok": True, "message": message, "invite_url": invite_url, "email": invitation.email, "delivery": delivery, "mailed": mailed})
     except ValueError as error: db.session.rollback(); return json_error(error)
 
 
@@ -668,6 +763,57 @@ def api_request_funding(request_id):
 # FINANCE / INVENTORY API
 # ==========================================================
 
+# ==========================================================
+# SAGE UPGRADE PHASE 2: INCOME / SALES ENTRY
+# Any authenticated staff member can record real money-in; organization-wide finance controls remain restricted.
+# ==========================================================
+
+@app.post("/api/finance/performance-targets")
+@login_required
+@roles_required("owner", "admin")
+def api_finance_performance_target():
+    try:
+        row = save_performance_target(app, current_user, request.get_json(silent=True) or {}); return jsonify({"ok": True, "id": row.id, "message": f"{row.name} saved."})
+    except ValueError as error: db.session.rollback(); return json_error(error)
+    except Exception: db.session.rollback(); app.logger.exception("Performance target save failed"); return json_error("Financial target could not be saved.", 500)
+
+@app.get("/api/income/export.csv")
+@login_required
+def api_income_export_csv():
+    """Export exactly the income register the signed-in user is permitted to see; staff never receive organization-wide rows."""
+    headers, rows = income_export_rows(current_user); output = io.StringIO(); writer = csv.writer(output); writer.writerow(headers); writer.writerows(rows); payload = io.BytesIO(output.getvalue().encode("utf-8-sig")); payload.seek(0)
+    return send_file(payload, mimetype="text/csv; charset=utf-8", as_attachment=True, download_name=f"SAGE_Income_{datetime.now().strftime('%Y%m%d_%H%M')}.csv")
+
+@app.post("/api/income/entries")
+@login_required
+def api_income_entry():
+    try:
+        payload = dict(request.form); payload["entry_type"] = str(payload.get("entry_type") or "revenue").lower(); payload["status"] = "posted"
+        if payload["entry_type"] not in {"income", "revenue"}: return json_error("Income & Sales only accepts income or revenue entries.")
+        if current_user.role not in {"owner", "admin", "finance"}: payload["department_id"], payload["account_id"] = current_user.department_id or "", ""
+        row = post_ledger_entry(app, current_user, payload, request.files.get("evidence")); return jsonify({"ok": True, "id": row.id, "reference": row.reference, "message": f"{row.display_type} recorded and sent to management tracking."})
+    except ValueError as error: db.session.rollback(); return json_error(error)
+    except Exception: db.session.rollback(); app.logger.exception("Income / sales entry failed"); return json_error("Income or sales entry could not be saved.", 500)
+
+@app.get("/api/expenses/export.csv")
+@login_required
+def api_expense_export_csv():
+    """Export the same role-scoped expense register visible on the Expenses & Expenditure page."""
+    if "expenses" not in allowed_pages(current_user): abort(403)
+    headers, rows = expense_export_rows(current_user); output = io.StringIO(); writer = csv.writer(output); writer.writerow(headers); writer.writerows(rows); payload = io.BytesIO(output.getvalue().encode("utf-8-sig")); payload.seek(0)
+    return send_file(payload, mimetype="text/csv; charset=utf-8", as_attachment=True, download_name=f"SAGE_Expenses_{datetime.now().strftime('%Y%m%d_%H%M')}.csv")
+
+@app.post("/api/expenses/entries")
+@login_required
+@roles_required("owner", "admin", "finance")
+def api_expense_entry():
+    try:
+        payload = dict(request.form); payload["entry_type"] = str(payload.get("entry_type") or "expense").lower(); payload["status"] = "posted"
+        if payload["entry_type"] not in {"expense", "expenditure", "operating_cost", "tax"}: return json_error("Choose a valid expense or expenditure type.")
+        row = post_ledger_entry(app, current_user, payload, request.files.get("evidence")); return jsonify({"ok": True, "id": row.id, "reference": row.reference, "message": f"{row.display_type} recorded and added to expenditure tracking."})
+    except ValueError as error: db.session.rollback(); return json_error(error)
+    except Exception: db.session.rollback(); app.logger.exception("Expense entry failed"); return json_error("Expense or expenditure could not be saved.", 500)
+
 @app.post("/api/finance/records")
 @login_required
 @roles_required("owner", "admin", "finance")
@@ -840,7 +986,7 @@ def api_inventory_move(item_id):
     item = InventoryItem.query.filter_by(id=item_id, organization_id=current_user.organization_id).first_or_404(); payload = request.get_json(silent=True) or {}
     if current_user.role not in {"owner", "admin", "finance", "procurement"} and item.department_id != current_user.department_id: abort(403)
     try:
-        destination_department = Department.query.filter_by(id=payload.get("destination_department_id"), organization_id=current_user.organization_id, is_active=True).first() if payload.get("destination_department_id") else item.department; move_stock(app, current_user, item, payload.get("movement_type"), payload.get("quantity"), payload.get("destination"), destination_department, payload.get("reason")); return jsonify({"ok": True, "message": "Stock movement recorded.", "quantity": float(item.quantity or 0)})
+        destination_department = Department.query.filter_by(id=payload.get("destination_department_id"), organization_id=current_user.organization_id, is_active=True).first() if payload.get("destination_department_id") else item.department; move_stock(app, current_user, item, payload.get("movement_type"), payload.get("quantity"), payload.get("destination"), destination_department, payload.get("reason"), User.query.filter_by(id=payload.get("recipient_user_id"), organization_id=current_user.organization_id).first() if payload.get("recipient_user_id") else None); return jsonify({"ok": True, "message": "Stock movement recorded.", "quantity": float(item.quantity or 0)})
     except (ValueError, PermissionError) as error: db.session.rollback(); return json_error(error, 403 if isinstance(error, PermissionError) else 400)
 
 # ==========================================================
@@ -852,7 +998,8 @@ def api_inventory_move(item_id):
 @login_required
 def api_department_operation_create():
     try:
-        row = create_department_operation(app, current_user, request.get_json(silent=True) or {}); return jsonify({"ok": True, "message": "Department operation recorded and management tracking updated.", "reference": row.reference})
+        payload = request.form.to_dict() if request.form else request.get_json(silent=True) or {}
+        row = create_department_operation(app, current_user, payload, request.files.get("evidence")); return jsonify({"ok": True, "message": "Department operation recorded and management tracking updated.", "reference": row.reference})
     except (ValueError, TypeError) as error: db.session.rollback(); return json_error(error)
 
 @app.post("/api/staff-reports")
@@ -872,6 +1019,16 @@ def api_staff_report_acknowledge(report_id):
         acknowledge_staff_report(app, current_user, row); return jsonify({"ok": True, "message": "Staff report acknowledged."})
     except PermissionError as error: db.session.rollback(); return json_error(error, 403)
 
+@app.get("/api/staff-reports/export.<file_format>")
+@login_required
+@roles_required("owner", "admin")
+def api_staff_reports_export(file_format):
+    """Download every submitted/acknowledged staff report with its written note and generated activity metrics."""
+    if file_format not in {"csv", "xlsx", "pdf"}: abort(404)
+    reports = StaffReport.query.filter(StaffReport.organization_id == current_user.organization_id, StaffReport.status.in_(["submitted", "acknowledged"])).order_by(StaffReport.submitted_at.desc(), StaffReport.created_at.desc()).all(); headers = ["Reference","Staff","Department","Period","Period Start","Period End","Status","Submitted At","Acknowledged At","Summary","Staff Note","Operations","Requests","Stock Movements","Asset Movements","Tracked Events"]
+    rows = [[row.reference,row.user.display_name if row.user else "Former staff",row.department.name if row.department else "",row.period_type.title(),row.period_start.isoformat(),row.period_end.isoformat(),row.display_status,row.submitted_at.isoformat() if row.submitted_at else "",row.acknowledged_at.isoformat() if row.acknowledged_at else "",row.summary or "",row.staff_note or "",(row.metrics_json or {}).get("operations",0),(row.metrics_json or {}).get("requests",0),(row.metrics_json or {}).get("stock_movements",0),(row.metrics_json or {}).get("asset_movements",0),(row.metrics_json or {}).get("tracked_events",0)] for row in reports]
+    payload, mimetype = build_report_export(headers, rows, file_format, "SAGE Staff Reports", f"{current_user.organization.name} · {len(rows)} submitted report(s)"); return send_file(payload, mimetype=mimetype, as_attachment=True, download_name=f"SAGE_Staff_Reports_{datetime.now().strftime('%Y%m%d')}.{file_format}")
+
 # ==========================================================
 # LIVE ACTIVITY / NOTIFICATIONS / SECURE EVIDENCE
 # ==========================================================
@@ -888,7 +1045,7 @@ def api_page_view():
 def api_notifications():
     # Both organization_id AND user_id are mandatory so another tenant can never appear in this feed.
     rows = Notification.query.filter_by(organization_id=current_user.organization_id, user_id=current_user.id).order_by(Notification.created_at.desc()).limit(40).all()
-    return jsonify({"ok": True, "organization_id": current_user.organization_id, "unread": sum(1 for row in rows if not row.is_read), "notifications": [{"id": row.id, "title": row.title, "message": row.message, "level": row.level, "entity_type": row.entity_type, "entity_id": row.entity_id, "created_at": row.created_at.isoformat(), "read": row.is_read} for row in rows]})
+    return jsonify({"ok": True, "organization_id": current_user.organization_id, "unread": Notification.query.filter_by(organization_id=current_user.organization_id,user_id=current_user.id,is_read=False).count(), "notifications": [{"id": row.id, "title": row.title, "message": row.message, "level": row.level, "entity_type": row.entity_type, "entity_id": row.entity_id, "route": notification_route(row.entity_type, row.title), "created_at": row.created_at.isoformat(), "read": row.is_read} for row in rows]})
 
 @app.post("/api/notifications/read")
 @login_required
@@ -907,7 +1064,7 @@ def api_notifications_stream():
         while True:
             db.session.remove(); rows = Notification.query.filter_by(organization_id=organization_id, user_id=user_id).order_by(Notification.created_at.desc()).limit(80).all(); fresh = [row for row in reversed(rows) if row.id not in seen]
             for row in fresh:
-                payload = {"id": row.id, "title": row.title, "message": row.message, "level": row.level, "entity_type": row.entity_type, "entity_id": row.entity_id, "created_at": row.created_at.isoformat()}; seen.add(row.id); yield f"id: {row.id}\nevent: notification\ndata: {json.dumps(payload)}\n\n"
+                payload = {"id": row.id, "title": row.title, "message": row.message, "level": row.level, "entity_type": row.entity_type, "entity_id": row.entity_id, "route": notification_route(row.entity_type, row.title), "created_at": row.created_at.isoformat()}; seen.add(row.id); yield f"id: {row.id}\nevent: notification\ndata: {json.dumps(payload)}\n\n"
             heartbeat += 1
             if heartbeat % 10 == 0: yield "event: heartbeat\ndata: {}\n\n"
             if len(seen) > 500: seen = {row.id for row in rows}
@@ -918,6 +1075,10 @@ def api_notifications_stream():
 @login_required
 def view_evidence(attachment_id):
     attachment = Attachment.query.filter_by(id=attachment_id, organization_id=current_user.organization_id).first_or_404()
+    if current_user.role not in {"owner", "admin", "finance"}:
+        from services.record_trace_service import get_record
+        try: get_record(current_user, attachment.entity_type, attachment.entity_id)
+        except (LookupError, ValueError): abort(403)
     try: return attachment_response(app, attachment)
     except FileNotFoundError: abort(404)
 
@@ -932,6 +1093,7 @@ def api_report_export(report_type, file_format):
     allowed_reports = {"summary","departments","inventory","requests","procurement","assets","staff","audit","finance","income","expenses","profit-loss","cash-flow","receivables","payables","suppliers","branches"}; allowed_formats = {"csv","xlsx","pdf"}; period = str(request.args.get("period") or "all").strip().lower()
     if report_type not in allowed_reports or file_format not in allowed_formats or period not in {"all","daily","weekly","monthly","quarterly","yearly"}: abort(404)
     if current_user.role not in {"owner","admin","finance","procurement"}: abort(403)
+    if current_user.role == "procurement" and report_type not in {"procurement", "requests", "inventory", "assets", "suppliers"}: abort(403)
     try:
         headers, rows = management_export_rows(current_user, report_type, period); title = f"SAGE {report_type.replace('-', ' ').title()} Report"; subtitle = f"{current_user.organization.name} · {period.title()} · {len(rows)} row(s)"; payload, mimetype = build_report_export(headers, rows, file_format, title, subtitle); safe_type = report_type.replace("-", "_").title(); return send_file(payload, mimetype=mimetype, as_attachment=True, download_name=f"SAGE_{safe_type}_{period.title()}_{datetime.now().strftime('%Y%m%d')}.{file_format}")
     except (ValueError, TypeError) as error: return json_error(error)
@@ -973,6 +1135,15 @@ def ready():
 # Run `flask --app app sage-retention --dry-run` first, then rerun without --dry-run to apply.
 # ==========================================================
 
+@app.cli.command("sage-upgrade-owner-controls")
+def sage_upgrade_owner_controls():
+    """Create the additive owner-control tables; preserve existing business records."""
+    from models import RecordLink, BudgetReservation, ReconciliationMatch, FinanceVerification, CustodyAcknowledgment, ManagementTask, TaskComment, DirectPurchaseLine, ObligationTerms
+    tables=[model.__table__ for model in (RecordLink,BudgetReservation,ReconciliationMatch,FinanceVerification,CustodyAcknowledgment,ManagementTask,TaskComment,DirectPurchaseLine,ObligationTerms)]
+    db.metadata.create_all(bind=db.engine,tables=tables,checkfirst=True)
+    click.echo("Owner control tables are ready; existing records were preserved.")
+
+
 @app.cli.command("sage-retention")
 @click.option("--dry-run", is_flag=True, help="Preview records eligible for retention cleanup without deleting them.")
 def sage_retention(dry_run):
@@ -1012,6 +1183,14 @@ def catalog(): return render_vision_page("catalog")
 @app.route("/analytics")
 @login_required
 def analytics(): return render_vision_page("analytics")
+
+@app.route("/income")
+@login_required
+def income(): return render_vision_page("income")
+
+@app.route("/expenses")
+@login_required
+def expenses(): return render_vision_page("expenses")
 
 @app.route("/finance")
 @login_required

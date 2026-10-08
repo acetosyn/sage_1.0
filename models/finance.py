@@ -259,3 +259,29 @@ class FinanceForecast(db.Model):
 
     department = db.relationship("Department", foreign_keys=[department_id])
     created_by = db.relationship("User", foreign_keys=[created_by_id])
+
+# ==========================================================
+# REVENUE / PROFIT PERFORMANCE TARGETS
+# Owner-set monthly or yearly financial goals used for actual-vs-target management comparison.
+# ==========================================================
+
+class FinancePerformanceTarget(db.Model):
+    __tablename__ = "finance_performance_targets"
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    organization_id = db.Column(db.String(36), db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    department_id = db.Column(db.String(36), db.ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    name = db.Column(db.String(180), nullable=False)
+    target_type = db.Column(db.String(32), nullable=False, index=True)  # revenue / net_profit
+    period_type = db.Column(db.String(16), nullable=False, index=True)  # monthly / yearly
+    period_start = db.Column(db.Date, nullable=False, index=True)
+    period_end = db.Column(db.Date, nullable=False, index=True)
+    target_amount = db.Column(db.Numeric(18, 2), nullable=False, default=0)
+    currency = db.Column(db.String(12), nullable=False, default="NGN")
+    notes = db.Column(db.Text, nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+    updated_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)
+
+    department = db.relationship("Department", foreign_keys=[department_id]); created_by = db.relationship("User", foreign_keys=[created_by_id])

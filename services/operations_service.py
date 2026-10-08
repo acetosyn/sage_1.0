@@ -3,6 +3,7 @@
 
 import re
 from datetime import date, datetime, timezone
+from core.datetime_utils import as_utc
 from decimal import Decimal, InvalidOperation
 from sqlalchemy import func
 from models import ActivityEvent, AssetItem, AssetMovement, Attachment, CatalogItem, Department, FinancialRecord, FulfillmentLine, InventoryItem, PurchaseFulfillment, PurchaseRequest, RequestFunding, RequestItem, StockMovement, User
@@ -15,12 +16,18 @@ FINANCE_TYPES = {"income", "revenue", "expense", "expenditure", "profit", "loss"
 
 
 def money(value, default="0"):
-    try: return Decimal(str(value if value not in (None, "") else default)).quantize(Decimal("0.01"))
+    try:
+        parsed = Decimal(str(value if value not in (None, "") else default)).quantize(Decimal("0.01"))
+        if not parsed.is_finite() or parsed < 0: raise ValueError("Enter a valid non-negative amount.")
+        return parsed
     except (InvalidOperation, ValueError): raise ValueError("Enter a valid amount.")
 
 
 def quantity(value, default="1"):
-    try: return Decimal(str(value if value not in (None, "") else default)).quantize(Decimal("0.001"))
+    try:
+        result = Decimal(str(value if value not in (None, "") else default)).quantize(Decimal("0.001"))
+        if not result.is_finite() or result < 0: raise ValueError("Enter a valid non-negative quantity.")
+        return result
     except (InvalidOperation, ValueError): raise ValueError("Enter a valid quantity.")
 
 
@@ -55,16 +62,16 @@ def create_request(app, user, payload):
     if not title: raise ValueError("Request title or item name is required.")
     items = payload.get("items") if isinstance(payload.get("items"), list) else [{"item_name": payload.get("item_name") or title, "category": payload.get("category"), "unit": payload.get("unit") or "unit", "quantity": payload.get("quantity") or 1, "unit_cost": payload.get("unit_cost") or payload.get("estimated_unit_cost") or 0}]
     request_row = PurchaseRequest(reference=next_reference("REQ", PurchaseRequest, user.organization_id), organization_id=user.organization_id, department_id=department.id, requester_id=user.id, title=title, purpose=purpose or None, urgency=(payload.get("urgency") or "normal").strip().lower(), status="draft" if payload.get("save_as_draft") else "submitted", currency=user.organization.currency)
-    db.session.add(request_row); db.session.flush(); total = Decimal("0")
+    db.session.add(request_row); db.session.flush(); total = Decimal("0"); item_details = []
     for raw in items:
         name = str(raw.get("item_name") or "").strip()
         if not name: continue
-        qty, unit_cost = quantity(raw.get("quantity"), "1"), money(raw.get("unit_cost"), "0"); line_total = (qty * unit_cost).quantize(Decimal("0.01")); total += line_total
-        db.session.add(RequestItem(request_id=request_row.id, item_name=name, category=(raw.get("category") or "").strip() or None, unit=(raw.get("unit") or "unit").strip(), quantity=qty, unit_cost=unit_cost, estimated_total=line_total)); ensure_catalog_item(user, department, name, raw.get("category"), raw.get("unit"))
+        unit = (raw.get("unit") or "unit").strip(); qty, unit_cost = quantity(raw.get("quantity"), "1"), money(raw.get("unit_cost"), "0"); line_total = (qty * unit_cost).quantize(Decimal("0.01")); total += line_total
+        db.session.add(RequestItem(request_id=request_row.id, item_name=name, category=(raw.get("category") or "").strip() or None, unit=unit, quantity=qty, unit_cost=unit_cost, estimated_total=line_total)); ensure_catalog_item(user, department, name, raw.get("category"), unit); item_details.append({"name": name, "quantity": float(qty), "unit": unit, "unit_cost": float(unit_cost), "line_total": float(line_total)})
     if total <= 0: raise ValueError("Add at least one item with a valid estimated amount.")
     request_row.estimated_total = total; request_row.submitted_at = datetime.now(timezone.utc) if request_row.status == "submitted" else None
-    title_text = "Request submitted" if request_row.status == "submitted" else "Request saved as draft"; description = f"{user.display_name} {'submitted' if request_row.status == 'submitted' else 'saved'} {request_row.reference} for {department.name}: {request_row.title} ({user.organization.currency} {total:,.2f})."
-    record_activity(app, user, "request_created", title_text, description, "request", request_row.id, {"reference": request_row.reference, "amount": float(total), "status": request_row.status}, notify_owner=request_row.status == "submitted", email_owner=request_row.status == "submitted", level="warning" if request_row.status == "submitted" else "info")
+    item_summary = "; ".join(f"{item['name']} — {item['quantity']:g} {item['unit']} × {user.organization.currency} {item['unit_cost']:,.2f}" for item in item_details); title_text = "Request submitted" if request_row.status == "submitted" else "Request saved as draft"; description = f"{user.display_name} {'submitted' if request_row.status == 'submitted' else 'saved'} {request_row.reference} for {department.name}: {request_row.title} ({user.organization.currency} {total:,.2f}).{f' Items: {item_summary}.' if item_summary else ''}"
+    record_activity(app, user, "request_created", title_text, description, "request", request_row.id, {"reference": request_row.reference, "amount": float(total), "status": request_row.status, "items": item_details}, notify_owner=request_row.status == "submitted", email_owner=request_row.status == "submitted", level="warning" if request_row.status == "submitted" else "info")
     db.session.commit(); return request_row
 
 
@@ -78,6 +85,8 @@ def decide_request(app, actor, request_row, action, note=None):
         if request_row.status not in {"submitted"}: raise ValueError("Only submitted requests can be approved.")
         request_row.status, request_row.approved_at, request_row.approved_by_id, request_row.decision_note = "approved", now, actor.id, note
         if not request_row.funding: db.session.add(RequestFunding(request_id=request_row.id, organization_id=actor.organization_id, department_id=request_row.department_id, recorded_by_id=actor.id, approved_budget=request_row.estimated_total, amount_sent=0, currency=request_row.currency))
+        from services.budget_control_service import sync_request_budget
+        sync_request_budget(request_row, actor)
         title, message, level = "Request approved", f"{request_row.reference} for {request_row.title} was approved by {actor.display_name}. Stage 2 acquisition logging is now available; funding can be recorded separately.", "success"
     elif action == "money_sent":
         if request_row.status not in {"approved"}: raise ValueError("Approve the request before marking money sent/granted.")
@@ -89,10 +98,12 @@ def decide_request(app, actor, request_row, action, note=None):
     elif action == "reject":
         if request_row.status not in {"submitted", "approved"}: raise ValueError("This request cannot be rejected at its current stage.")
         request_row.status, request_row.rejected_at, request_row.rejected_by_id, request_row.decision_note = "rejected", now, actor.id, note
+        from services.budget_control_service import sync_request_budget
+        sync_request_budget(request_row, actor, release=True)
         title, message, level = "Request rejected", f"{request_row.reference} for {request_row.title} was rejected by {actor.display_name}.{(' Note: ' + note) if note else ''}", "danger"
     else: raise ValueError("Unsupported request action.")
     if request_row.requester: notify_user(app, request_row.requester, title, message, level, "request", request_row.id, email=True)
-    record_revision(actor, "request", request_row.id, f"request_{action}", before, {"status":request_row.status,"approved_by_id":request_row.approved_by_id,"money_sent_by_id":request_row.money_sent_by_id,"rejected_by_id":request_row.rejected_by_id,"decision_note":request_row.decision_note}, f"{request_row.reference} moved from {before['status']} to {request_row.status}."); record_activity(app, actor, f"request_{action}", title, message, "request", request_row.id, {"reference": request_row.reference, "status": request_row.status, "approval_rule": rule.name if action in {"approve", "reject"} and rule else "default"}, notify_owner=False)
+    record_revision(actor, "request", request_row.id, f"request_{action}", before, {"status":request_row.status,"approved_by_id":request_row.approved_by_id,"money_sent_by_id":request_row.money_sent_by_id,"rejected_by_id":request_row.rejected_by_id,"decision_note":request_row.decision_note}, f"{request_row.reference} moved from {before['status']} to {request_row.status}."); record_activity(app, actor, f"request_{action}", title, message, "request", request_row.id, {"reference": request_row.reference, "status": request_row.status, "approval_rule": rule.name if action in {"approve", "reject"} and rule else "default"}, notify_owner=True)
     db.session.commit(); return request_row
 
 
@@ -102,6 +113,9 @@ def save_request_funding(app, actor, request_row, payload):
     if request_row.status not in {"approved", "money_sent", "fulfilled", "verified"}: raise ValueError("Approve the request before recording its budget/funding.")
     funding = request_row.funding or RequestFunding(request_id=request_row.id, organization_id=actor.organization_id, department_id=request_row.department_id, recorded_by_id=actor.id, currency=request_row.currency); before = {"request_status":request_row.status,"approved_budget":funding.approved_budget,"amount_sent":funding.amount_sent,"payment_method":funding.payment_method,"payment_reference":funding.payment_reference}
     funding.approved_budget = money(payload.get("approved_budget"), request_row.estimated_total); funding.amount_sent = money(payload.get("amount_sent"), funding.amount_sent or 0); funding.payment_method = str(payload.get("payment_method") or "").strip() or None; funding.payment_reference = str(payload.get("payment_reference") or "").strip() or None; funding.note = str(payload.get("note") or "").strip() or None; funding.recorded_by_id = actor.id
+    if funding.amount_sent > funding.approved_budget: raise ValueError("Amount released exceeds the approved amount. Revise the approval first.")
+    from services.budget_control_service import sync_request_budget
+    sync_request_budget(request_row, actor, amount=funding.approved_budget, budget_id=payload.get("budget_id"))
     mark_sent = str(payload.get("mark_money_sent") or "false").lower() in {"1", "true", "yes"}
     if mark_sent and request_row.status == "approved": request_row.status, request_row.money_sent_at, request_row.money_sent_by_id = "money_sent", datetime.now(timezone.utc), actor.id; funding.funded_at = request_row.money_sent_at
     elif funding.amount_sent > 0 and not funding.funded_at: funding.funded_at = datetime.now(timezone.utc)
@@ -126,7 +140,7 @@ def save_fulfillment(app, user, request_row, form, receipt_file=None, item_image
     source_type = (form.get("source_type") or "self_purchase").strip(); fulfillment.source_type = source_type if source_type in {"self_purchase", "received_from_other"} else "self_purchase"; fulfillment.supplied_by = (form.get("supplied_by") or "").strip() or None; fulfillment.supplier_name = (form.get("supplier_name") or "").strip() or None; ensure_supplier(user, fulfillment.supplier_name) if fulfillment.supplier_name else None; fulfillment.notes = (form.get("notes") or "").strip() or None
     if fulfillment.source_type == "received_from_other" and not fulfillment.supplied_by: raise ValueError("Enter or select the staff/person who delivered or supplied the item.")
     purchase_date = (form.get("purchase_date") or "").strip(); fulfillment.purchase_date = date.fromisoformat(purchase_date) if purchase_date else date.today(); finalize = str(form.get("finalize") or "false").lower() in {"1", "true", "yes"}; fulfillment.is_draft = not finalize
-    db.session.add(fulfillment); db.session.flush(); delivered_at_raw = str(form.get("delivered_at") or "").strip(); delivered_at = datetime.fromisoformat(delivered_at_raw) if delivered_at_raw else datetime.now(timezone.utc); delivered_at = delivered_at.replace(tzinfo=timezone.utc) if delivered_at.tzinfo is None else delivered_at
+    db.session.add(fulfillment); db.session.flush(); delivered_at_raw = str(form.get("delivered_at") or "").strip(); delivered_at = datetime.fromisoformat(delivered_at_raw) if delivered_at_raw else datetime.now(timezone.utc); delivered_at = as_utc(delivered_at)
     actual_total = Decimal("0"); line_rows = []
     for request_item in request_row.items:
         actual_qty = quantity(form.get(f"actual_quantity_{request_item.id}"), request_item.quantity); actual_unit_cost = money(form.get(f"actual_unit_cost_{request_item.id}"), request_item.unit_cost); line_total = (actual_qty * actual_unit_cost).quantize(Decimal("0.01")); actual_total += line_total
@@ -144,6 +158,8 @@ def save_fulfillment(app, user, request_row, form, receipt_file=None, item_image
         if record_as == "asset": post_fulfillment_to_assets(user, request_row, fulfillment, form)
         else: post_fulfillment_to_inventory(user, request_row, fulfillment, form)
         if fulfillment.actual_total > 0: add_financial_record(user, "expense", request_row.title, fulfillment.actual_total, request_row.department_id, "Actual procurement expenditure", fulfillment.id, commit=False)
+        from services.budget_control_service import sync_request_budget
+        sync_request_budget(request_row, user, actual=fulfillment.actual_total)
         funding = request_row.funding; budget = Decimal(funding.approved_budget or request_row.estimated_total) if funding else Decimal(request_row.estimated_total or 0); variance = budget - Decimal(fulfillment.actual_total or 0); source_label = user.display_name if fulfillment.source_type == "self_purchase" else (fulfillment.supplied_by or "another staff/person")
         description = f"{user.display_name} submitted Stage 2 for {request_row.reference}: actual {user.organization.currency} {fulfillment.actual_total:,.2f}, budget {user.organization.currency} {budget:,.2f}, variance {user.organization.currency} {variance:,.2f}; source {source_label}; {len(line_rows)} line item(s); receipt attached{' and item image attached' if item_image else ''}."
         record_activity(app, user, "acquisition_submitted", "Acquisition log submitted", description, "fulfillment", fulfillment.id, {"request": request_row.reference, "actual_total": float(fulfillment.actual_total), "budget": float(budget), "variance": float(variance), "receipt": existing_receipt.original_name if existing_receipt else None, "item_image": item_image.original_name if item_image else None, "record_as": record_as}, notify_owner=True, email_owner=True, level="success")
@@ -196,14 +212,15 @@ def post_fulfillment_to_assets(user, request_row, fulfillment, form):
         db.session.add(asset); db.session.flush(); db.session.add(AssetMovement(organization_id=user.organization_id, asset_id=asset.id, user_id=user.id, movement_type="register", quantity=qty, destination_department_id=request_row.department_id, custodian_user_id=custodian_id, destination_location=location, reason=f"Acquired through {request_row.reference}", reference=request_row.reference))
 
 
-def move_stock(app, user, item, movement_type, qty, destination=None, destination_department=None, reason=None):
+def move_stock(app, user, item, movement_type, qty, destination=None, destination_department=None, reason=None, recipient=None):
     """Post a controlled stock movement; transfers create/update the destination department balance instead of losing stock."""
     movement_type = (movement_type or "").strip().lower(); qty = quantity(qty, "0")
     if item.organization_id != user.organization_id: raise PermissionError("Inventory item is outside your organization.")
     if destination_department and destination_department.organization_id != user.organization_id: raise PermissionError("Destination department is outside your organization.")
-    if movement_type not in {"stock_out", "transfer", "return", "write_off", "adjustment_in"}: raise ValueError("Choose a valid stock movement type.")
+    if movement_type not in {"stock_out", "transfer", "return", "write_off", "adjustment_in", "damaged", "lost"}: raise ValueError("Choose a valid stock movement type.")
+    if recipient and recipient.organization_id != user.organization_id: raise PermissionError("Recipient is outside your organization.")
     if qty <= 0: raise ValueError("Movement quantity must be greater than zero.")
-    current = Decimal(item.quantity or 0); before = {"quantity":current,"department_id":item.department_id,"location":item.location}; subtract = movement_type in {"stock_out", "transfer", "write_off"}
+    current = Decimal(item.quantity or 0); before = {"quantity":current,"department_id":item.department_id,"location":item.location}; subtract = movement_type in {"stock_out", "transfer", "write_off", "damaged", "lost"}
     if subtract and qty > current: raise ValueError("Movement quantity is greater than the available stock.")
     source = item.location; destination_department = destination_department or item.department; destination = (destination or (destination_department.name if destination_department else item.location) or "Department").strip()
     if movement_type == "transfer":
@@ -212,14 +229,19 @@ def move_stock(app, user, item, movement_type, qty, destination=None, destinatio
             target = InventoryItem(organization_id=user.organization_id, department_id=destination_department.id if destination_department else item.department_id, name=item.name, sku=f"STK-{re.sub(r'[^A-Z0-9]', '', item.name.upper())[:6]}-{InventoryItem.query.filter_by(organization_id=user.organization_id).count()+1:04d}", category=item.category, unit=item.unit, quantity=0, unit_value=item.unit_value, reorder_level=item.reorder_level, location=destination, added_by_id=user.id); db.session.add(target); db.session.flush()
         target.quantity = Decimal(target.quantity or 0) + qty
     else: item.quantity = current - qty if subtract else current + qty
-    movement = StockMovement(organization_id=user.organization_id, inventory_item_id=item.id, user_id=user.id, movement_type=movement_type, quantity=qty, source=source, destination=destination, reason=(reason or "").strip() or None); db.session.add(movement); record_revision(user, "inventory_item", item.id, f"stock_{movement_type}", before, {"quantity":item.quantity,"department_id":item.department_id,"location":item.location}, f"{movement_type.replace('_',' ').title()} {float(qty):g} {item.unit} of {item.name}."); record_activity(app, user, f"stock_{movement_type}", "Stock movement recorded", f"{user.display_name} recorded {movement_type.replace('_',' ')} of {qty:g} {item.unit} {item.name}: {source or '—'} → {destination or '—'}.", "inventory_item", item.id, {"movement_type": movement_type, "quantity": float(qty), "source": source, "destination": destination, "destination_department": destination_department.name if destination_department else None}, notify_owner=True, email_owner=True); db.session.commit(); return movement
+    movement = StockMovement(organization_id=user.organization_id, inventory_item_id=item.id, user_id=user.id, movement_type=movement_type, quantity=qty, source=source, destination=destination, reason=(reason or "").strip() or None); db.session.add(movement); record_revision(user, "inventory_item", item.id, f"stock_{movement_type}", before, {"quantity":item.quantity,"department_id":item.department_id,"location":item.location}, f"{movement_type.replace('_',' ').title()} {float(qty):g} {item.unit} of {item.name}."); record_activity(app, user, f"stock_{movement_type}", "Stock movement recorded", f"{user.display_name} recorded {movement_type.replace('_',' ')} of {qty:g} {item.unit} {item.name}: {source or '—'} → {destination or '—'}.", "inventory_item", item.id, {"movement_type": movement_type, "quantity": float(qty), "source": source, "destination": destination, "destination_department": destination_department.name if destination_department else None}, notify_owner=True, email_owner=True); db.session.flush()
+    if recipient:
+        from models import RecordLink
+        db.session.add(RecordLink(organization_id=user.organization_id, source_type="stock_movement", source_id=movement.id, target_type="user", target_id=recipient.id, relation="issued_to", created_by_id=user.id))
+        notify_user(app, recipient, "Stock issued to you", f"{item.name}: {qty:g} {item.unit}. Open the item history to acknowledge receipt.", "info", "stock_movement", movement.id)
+    db.session.commit(); return movement
 
 
 def move_asset(app, user, asset, movement_type, destination_department=None, destination_location=None, custodian=None, reason=None):
     """Record assignment, transfer, return, maintenance or write-off while preserving full asset history."""
     movement_type = (movement_type or "").strip().lower()
     if asset.organization_id != user.organization_id: raise PermissionError("Asset is outside your organization.")
-    if movement_type not in {"assign", "transfer", "return", "maintenance", "write_off", "restore"}: raise ValueError("Choose a valid asset movement type.")
+    if movement_type not in {"assign", "transfer", "return", "maintenance", "write_off", "restore", "damaged", "lost"}: raise ValueError("Choose a valid asset movement type.")
     source_department_id, source_location = asset.department_id, asset.location; before = {"department_id":asset.department_id,"location":asset.location,"custodian_user_id":asset.custodian_user_id,"status":asset.status}
     if destination_department and destination_department.organization_id != user.organization_id: raise PermissionError("Destination department is outside your organization.")
     if custodian and custodian.organization_id != user.organization_id: raise PermissionError("Custodian is outside your organization.")
@@ -227,6 +249,8 @@ def move_asset(app, user, asset, movement_type, destination_department=None, des
     elif movement_type == "return": asset.custodian_user_id = None; asset.location = destination_location or (asset.department.name if asset.department else asset.location); asset.status = "active"
     elif movement_type == "maintenance": asset.status = "maintenance"; asset.location = destination_location or asset.location
     elif movement_type == "write_off": asset.status = "written_off"
+    elif movement_type == "lost": asset.status = "lost"
+    elif movement_type == "damaged": asset.status, asset.condition = "maintenance", "damaged"
     elif movement_type == "restore": asset.status = "active"
     movement = AssetMovement(organization_id=user.organization_id, asset_id=asset.id, user_id=user.id, movement_type=movement_type, quantity=asset.quantity, source_department_id=source_department_id, destination_department_id=asset.department_id, custodian_user_id=asset.custodian_user_id, source_location=source_location, destination_location=asset.location, reason=(reason or "").strip() or None)
     db.session.add(movement); record_revision(user, "asset", asset.id, f"asset_{movement_type}", before, {"department_id":asset.department_id,"location":asset.location,"custodian_user_id":asset.custodian_user_id,"status":asset.status}, f"{movement_type.replace('_',' ').title()} asset {asset.asset_tag}."); record_activity(app, user, f"asset_{movement_type}", "Asset movement recorded", f"{user.display_name} recorded {movement_type.replace('_',' ')} for {asset.name} ({asset.asset_tag}): {source_location or '—'} → {asset.location or '—'}.", "asset", asset.id, {"movement_type": movement_type, "asset_tag": asset.asset_tag, "source": source_location, "destination": asset.location}, notify_owner=True, email_owner=True); db.session.commit(); return movement
@@ -254,7 +278,7 @@ def finance_summary(organization_id, department_id=None):
 
 def financial_month_series(organization_id, department_id=None):
     """Return current-year monthly series from real posted finance records; no dashboard demo numbers are generated."""
-    year = datetime.now(timezone.utc).year; start = datetime(year, 1, 1, tzinfo=timezone.utc); query = FinancialRecord.query.filter(FinancialRecord.organization_id == organization_id, FinancialRecord.status == "posted", FinancialRecord.occurred_at >= start)
+    year = datetime.now(timezone.utc).year; start = datetime(year, 1, 1, tzinfo=timezone.utc); query = FinancialRecord.query.filter(FinancialRecord.organization_id == organization_id, FinancialRecord.status == "posted", FinancialRecord.occurred_at >= start, FinancialRecord.occurred_at < datetime(year + 1, 1, 1, tzinfo=timezone.utc))
     if department_id: query = query.filter(FinancialRecord.department_id == department_id)
     income, expenses = [0.0] * 12, [0.0] * 12
     for row in query.all():
@@ -268,10 +292,10 @@ def financial_month_series(organization_id, department_id=None):
 def analytics_context(user):
     """Build analytics only from the signed-in tenant's real records; returns zeros/empty lists when no data exists."""
     org = user.organization_id; organization_wide = user.role in {"owner", "admin", "finance"}; department_id = None if organization_wide else user.department_id; series = financial_month_series(org, department_id); now = datetime.now(timezone.utc); current_index = now.month - 1; previous_index = max(0, current_index - 1); current_income, previous_income = series["income"][current_index], series["income"][previous_index]; current_expense = series["expenses"][current_index]
-    income_growth = ((current_income - previous_income) / previous_income * 100.0) if previous_income else (100.0 if current_income else 0.0); expense_ratio = (current_expense / current_income * 100.0) if current_income else 0.0
+    income_growth = ((current_income - previous_income) / previous_income * 100.0) if previous_income else None; expense_ratio = (current_expense / current_income * 100.0) if current_income else None
     request_query = PurchaseRequest.query.filter_by(organization_id=org); finance_query = FinancialRecord.query.filter(FinancialRecord.organization_id == org, FinancialRecord.status == "posted")
     if department_id: request_query = request_query.filter(PurchaseRequest.department_id == department_id); finance_query = finance_query.filter(FinancialRecord.department_id == department_id)
-    approved = [row for row in request_query.filter(PurchaseRequest.approved_at.isnot(None), PurchaseRequest.submitted_at.isnot(None)).all() if row.approved_at and row.submitted_at]; avg_approval_hours = (sum(max(0.0, (row.approved_at - row.submitted_at).total_seconds()) for row in approved) / len(approved) / 3600) if approved else 0.0
+    approved = [row for row in request_query.filter(PurchaseRequest.approved_at.isnot(None), PurchaseRequest.submitted_at.isnot(None)).all() if row.approved_at and row.submitted_at]; avg_approval_hours = (sum(max(0.0, (as_utc(row.approved_at) - as_utc(row.submitted_at)).total_seconds()) for row in approved) / len(approved) / 3600) if approved else 0.0
     completed = request_query.filter(PurchaseRequest.status.in_(["fulfilled", "verified"])).all(); completed_ids = [row.fulfillment.id for row in completed if row.fulfillment]; receipt_count = Attachment.query.filter(Attachment.organization_id == org, Attachment.entity_type == "fulfillment", Attachment.entity_id.in_(completed_ids), Attachment.is_final.is_(True)).count() if completed_ids else 0; receipt_compliance = (receipt_count / len(completed_ids) * 100.0) if completed_ids else 0.0
     expense_types = {"expense", "expenditure", "operating_cost", "payroll", "tax"}; category_rows = finance_query.filter(FinancialRecord.record_type.in_(expense_types)).all(); category_totals = {}
     for row in category_rows: category_totals[row.category or row.record_type.replace("_", " ").title()] = category_totals.get(row.category or row.record_type.replace("_", " ").title(), 0.0) + float(row.amount or 0)
@@ -282,5 +306,5 @@ def analytics_context(user):
     return {"income_growth": income_growth, "expense_ratio": expense_ratio, "receipt_compliance": receipt_compliance, "avg_approval_hours": avg_approval_hours, "spend_categories": [{"name": name, "amount": amount, "percent": (amount / max_category * 100.0) if max_category else 0} for name, amount in spend_categories], "department_rows": department_rows}
 
 def owner_dashboard_context(user):
-    org = user.organization_id; organization_wide = user.role in {"owner", "admin", "finance"}; department_id = None if organization_wide else user.department_id; summary = finance_summary(org, department_id); requests = PurchaseRequest.query.filter_by(organization_id=org).order_by(PurchaseRequest.created_at.desc()).limit(8).all() if organization_wide else PurchaseRequest.query.filter_by(organization_id=org, department_id=department_id).order_by(PurchaseRequest.created_at.desc()).limit(8).all(); activity = ActivityEvent.query.filter_by(organization_id=org).order_by(ActivityEvent.created_at.desc()).limit(10).all() if organization_wide else ActivityEvent.query.filter_by(organization_id=org, department_id=department_id).order_by(ActivityEvent.created_at.desc()).limit(10).all(); inventory = InventoryItem.query.filter_by(organization_id=org).all() if organization_wide else InventoryItem.query.filter_by(organization_id=org, department_id=department_id).all(); pending_query = PurchaseRequest.query.filter_by(organization_id=org, status="submitted") if organization_wide else PurchaseRequest.query.filter_by(organization_id=org, department_id=department_id, status="submitted")
-    return {"live_requests": requests, "activity_events": activity, "finance_summary": summary, "finance_chart": financial_month_series(org, department_id), "inventory_value": sum(item.total_value for item in inventory), "low_stock_count": sum(1 for item in inventory if float(item.quantity or 0) <= float(item.reorder_level or 0)), "pending_request_count": pending_query.count()}
+    org = user.organization_id; organization_wide = user.role in {"owner", "admin", "finance"}; department_id = None if organization_wide else user.department_id; summary = finance_summary(org, department_id if organization_wide or department_id else "__unassigned_staff__"); requests = PurchaseRequest.query.filter_by(organization_id=org).order_by(PurchaseRequest.created_at.desc()).limit(8).all() if organization_wide else PurchaseRequest.query.filter_by(organization_id=org, department_id=department_id).order_by(PurchaseRequest.created_at.desc()).limit(8).all(); activity = ActivityEvent.query.filter_by(organization_id=org).order_by(ActivityEvent.created_at.desc()).limit(10).all() if organization_wide else ActivityEvent.query.filter_by(organization_id=org, department_id=department_id).order_by(ActivityEvent.created_at.desc()).limit(10).all(); inventory = InventoryItem.query.filter_by(organization_id=org).all() if organization_wide else InventoryItem.query.filter_by(organization_id=org, department_id=department_id).all(); pending_query = PurchaseRequest.query.filter_by(organization_id=org, status="submitted") if organization_wide else PurchaseRequest.query.filter_by(organization_id=org, department_id=department_id, status="submitted")
+    return {"finance_summary": summary, "finance_chart": financial_month_series(org, department_id if organization_wide or department_id else "__unassigned_staff__"), "inventory_value": sum(item.total_value for item in inventory), "low_stock_count": sum(1 for item in inventory if float(item.quantity or 0) <= float(item.reorder_level or 0)), "pending_request_count": pending_query.count()}

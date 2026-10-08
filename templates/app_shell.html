@@ -3,8 +3,12 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#050505">
   <title>{{ page_title }} · SAGE</title>
+  <script>
+    /* SAGE THEME PRE-PAINT: apply the saved appearance before CSS/browser paint so light/sky/sage/sand/slate never flash through dark on reload. */
+    (()=>{try{const colors={dark:'#050505',light:'#f6f7f9',sky:'#edf7ff',sage:'#f0f5f1',sand:'#f7f3eb',slate:'#111720'},saved=localStorage.getItem('sage-theme')||localStorage.getItem('vision-theme')||'dark',theme=Object.prototype.hasOwnProperty.call(colors,saved)?saved:'dark',html=document.documentElement;html.dataset.theme=theme;html.style.backgroundColor=colors[theme];html.style.colorScheme=['dark','slate'].includes(theme)?'dark':'light';const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute('content',colors[theme]);}catch(_){}})();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="{{ url_for('static', filename='css/vision.css') }}">
+  <link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="{{ url_for('static', filename='css/vision.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='css/control.css') }}">
 </head>
 <body data-page="{{ page }}" data-user-role="{{ current_user.role }}" data-workspace-mode="{{ workspace_mode }}">
   {% include 'partials/icon_sprite.html' %}
@@ -14,7 +18,7 @@
   <!-- PERSISTENT SIDEBAR                                    -->
   <!-- ====================================================== -->
   <aside class="sidebar" id="sidebar">
-    <div class="sidebar-brand"><a href="/dashboard" data-route="dashboard" class="brand-link sage-brand-link" aria-label="SAGE dashboard"><span class="sage-mark"><i></i></span><span class="sage-wordmark" aria-label="SAGE"><b>S</b><b class="sage-a" aria-hidden="true">Λ</b><b>G</b><b>E</b><small>SAGE</small></span></a><button class="icon-button sidebar-close-mobile" id="mobileClose" aria-label="Close menu"><svg><use href="#i-x"/></svg></button></div>
+    <div class="sidebar-brand"><a href="/dashboard" data-route="dashboard" class="brand-link sage-brand-link" aria-label="SAGE dashboard"><span class="sage-mark"><i></i></span><span class="sage-wordmark" aria-label="SAGE"><b>S</b><b class="sage-a" aria-hidden="true">Λ</b><b>G</b><b>E</b></span></a><button class="icon-button sidebar-close-mobile" id="mobileClose" aria-label="Close menu"><svg><use href="#i-x"/></svg></button></div>
     <nav class="sidebar-nav" aria-label="Primary navigation">
       {% for section in nav_items %}<div class="nav-section"><div class="nav-section-label"><span>{{ section.section }}</span><svg><use href="#i-chevron-down"/></svg></div><div class="nav-group">{% for item in section["items"] %}<a class="nav-link {% if page == item.page %}active{% endif %}" href="/{{ item.page }}" data-route="{{ item.page }}" data-label="{{ item.label }}"><svg class="nav-icon"><use href="#i-{{ item.icon }}"/></svg><span class="nav-label">{{ item.label }}</span>{% if item.badge %}<span class="nav-badge">{{ item.badge }}</span>{% endif %}</a>{% endfor %}</div></div>{% endfor %}
     </nav>
@@ -38,7 +42,7 @@
   <!-- ====================================================== -->
   <!-- FLOATING QUICK ACTIONS                                 -->
   <!-- ====================================================== -->
-  <div class="floating-actions"><button class="floating-action ai-floating" id="floatingAI"><svg><use href="#i-sparkles"/></svg><span>Ask AI</span></button>{% if current_user.role == "owner" %}<a class="floating-action" href="/finance" data-route="finance"><span class="floating-dot">•••</span><span>Quick Record</span></a>{% else %}<button class="floating-action" id="floatingQuick"><span class="floating-dot">•••</span><span>Quick Add</span></button>{% endif %}</div>
+  <div class="floating-actions"><button class="floating-action ai-floating premium-float" id="floatingAI" aria-label="Ask SAGE AI"><span class="floating-action-icon"><svg><use href="#i-sparkles"/></svg></span><span class="floating-action-label">Ask AI</span></button>{% if current_user.role == "owner" %}<a class="floating-action quick-floating premium-float" href="/finance" data-route="finance" aria-label="Quick Record"><span class="floating-action-icon"><svg><use href="#i-plus"/></svg></span><span class="floating-action-label">Quick Record</span></a>{% else %}<button class="floating-action quick-floating premium-float" id="floatingQuick" aria-label="Quick Add"><span class="floating-action-icon"><svg><use href="#i-plus"/></svg></span><span class="floating-action-label">Quick Add</span></button>{% endif %}</div>
 
 {% if current_user.role != "owner" %}
   <!-- ====================================================== -->
@@ -79,12 +83,13 @@
   <!-- ====================================================== -->
   <div class="ai-backdrop" id="aiBackdrop"></div>
   <aside class="ai-drawer" id="aiDrawer" aria-hidden="true">
-    <div class="ai-drawer-head"><div class="ai-brand-orb"><svg><use href="#i-sparkles"/></svg></div><div><span>SAGE AI</span><strong>Your business operations copilot</strong></div><button class="icon-button" id="aiClose"><svg><use href="#i-x"/></svg></button></div>
-    <div class="ai-scope"><svg><use href="#i-shield"/></svg><span><strong>{{ current_user.role_label }} access</strong><small>{% if owner_admin %}Organization-wide scope{% elif current_user.department %}Scoped to {{ current_user.department.name }}{% else %}Restricted workspace scope{% endif %}</small></span></div>
-    <div class="ai-messages" id="aiMessages"><div class="ai-message assistant"><span class="ai-avatar"><svg><use href="#i-sparkles"/></svg></span><div><p>Hi {{ current_user.first_name }}. Ask me about live finance, requests, stock, budgets, reports, exceptions or your department activity.</p><small>SAGE AI · permission aware</small></div></div></div>
-    <div class="ai-prompts" id="aiPrompts"><button data-ai-prompt="Summarize our current financial position and the most important exceptions.">Executive summary</button><button data-ai-prompt="Which departments are spending the most and what should I review?">Department spend</button><button data-ai-prompt="What requests, low stock, receivables or payables need attention?">What needs attention?</button></div>
-    <form class="ai-composer" id="aiForm"><textarea id="aiInput" rows="1" placeholder="Ask SAGE AI..." maxlength="4000"></textarea><button type="submit" aria-label="Send"><svg><use href="#i-send"/></svg></button></form>
-    <div class="ai-footnote">AI respects your SAGE role. Live finance, requests, inventory, budgets, reports and accountability intelligence are connected. AI never bypasses your SAGE permissions.</div>
+    <div class="ai-drawer-head"><div class="ai-brand-orb"><svg><use href="#i-sparkles"/></svg></div><div><span>SAGE AI</span><strong>Business Intelligence Copilot</strong><small>Ask live questions about the records you are allowed to see.</small></div><button class="icon-button" id="aiClose" aria-label="Close SAGE AI"><svg><use href="#i-x"/></svg></button></div>
+    <div class="ai-scope"><svg><use href="#i-shield"/></svg><span><strong>{{ current_user.role_label }} access</strong><small>{% if owner_admin %}Organization-wide scope{% elif current_user.department %}Scoped to {{ current_user.department.name }}{% else %}Restricted workspace scope{% endif %} · permission aware</small></span></div>
+    <div class="ai-question-bank"><div class="ai-question-bank-head"><span><small>COMMON QUESTIONS</small><strong>Start with a useful business question</strong></span><svg><use href="#i-sparkles"/></svg></div><div class="ai-question-grid"><button data-ai-prompt="Summarize our current financial position and the most important exceptions."><svg><use href="#i-analytics"/></svg><span><b>Executive summary</b><small>Income, spend, net position and exceptions</small></span></button><button data-ai-prompt="Which departments are spending the most and what should I review?"><svg><use href="#i-building"/></svg><span><b>Department spend</b><small>Compare departmental expenditure</small></span></button><button data-ai-prompt="What requests, low stock, receivables or payables need attention?"><svg><use href="#i-bell"/></svg><span><b>Needs attention</b><small>Surface urgent management actions</small></span></button><button data-ai-prompt="Show the most important income and sales trends in the current period."><svg><use href="#i-arrow-up"/></svg><span><b>Income trends</b><small>Sales, sources and money-in movement</small></span></button><button data-ai-prompt="What expenses or unusual spending patterns should management review?"><svg><use href="#i-arrow-down"/></svg><span><b>Expense review</b><small>Spend patterns and unusual activity</small></span></button><button data-ai-prompt="Summarize low-stock items, asset issues and operational risks."><svg><use href="#i-inventory"/></svg><span><b>Operations health</b><small>Stock, assets and operating risks</small></span></button></div></div>
+    <div class="ai-messages" id="aiMessages"><div class="ai-message assistant"><span class="ai-avatar"><svg><use href="#i-sparkles"/></svg></span><div><span class="ai-message-label">SAGE AI</span><p>Hi {{ current_user.first_name }}. I can analyze live finance, requests, sales, expenditure, stock, budgets, reports and accountable activity within your access level.</p><small>Live SAGE context · permission aware</small></div></div></div>
+    <div class="ai-prompts" id="aiPrompts"><button data-ai-prompt="Compare this month with last month and explain the biggest changes.">Compare months</button><button data-ai-prompt="Which outstanding payments are overdue right now?">Overdue payments</button><button data-ai-prompt="Which staff or departments have the most pending actions?">Pending actions</button></div>
+    <form class="ai-composer" id="aiForm"><textarea id="aiInput" rows="1" placeholder="Ask SAGE AI about your business..." maxlength="4000"></textarea><button type="submit" aria-label="Send question to SAGE AI"><svg><use href="#i-send"/></svg></button></form>
+    <div class="ai-footnote"><svg><use href="#i-shield"/></svg><span>SAGE AI uses only data your role can access. It does not bypass tenant or department permissions.</span></div>
   </aside>
 
   <!-- ====================================================== -->
@@ -101,7 +106,10 @@
   <!-- ====================================================== -->
 
   <div class="toast-stack" id="toastStack"></div>
+  {% include 'partials/record_drawer.html' %}
   <script>window.SAGE_INITIAL_PAGE = {{ page|tojson }}; window.SAGE_USER = {{ {"name": current_user.display_name, "role": current_user.role, "department": current_user.department.name if current_user.department else None, "currency": current_user.organization.currency, "workspace_mode": workspace_mode}|tojson }}; window.SAGE_BOOT_BRIEFING = {{ (boot_briefing or {})|tojson }};</script>
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/control.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vision.js') }}"></script>
 </body>
 </html>

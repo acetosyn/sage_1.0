@@ -2,15 +2,16 @@
 # Keeps static navigation labels separate while operational page data now comes from the real database.
 
 NAV_ITEMS = [
-    {"section": "OVERVIEW", "items": [
-        {"page": "dashboard", "label": "Dashboard", "icon": "dashboard"}, {"page": "workspace", "label": "Department Workspace", "icon": "briefcase"}, {"page": "catalog", "label": "Department Catalogue", "icon": "inventory"}, {"page": "analytics", "label": "Analytics", "icon": "analytics"}, {"page": "finance", "label": "Finance", "icon": "wallet"},
+    {"section": "CORE", "items": [
+        {"page": "dashboard", "label": "Dashboard", "icon": "dashboard"}, {"page": "requests", "label": "Requests & Approvals", "icon": "requests"}, {"page": "income", "label": "Income & Sales", "icon": "arrow-up"}, {"page": "expenses", "label": "Expenses & Expenditure", "icon": "arrow-down"}, {"page": "finance", "label": "Finance", "icon": "wallet"},
     ]},
-    {"section": "OPERATIONS", "items": [
-        {"page": "requests", "label": "Requests & Approvals", "icon": "requests"}, {"page": "operations", "label": "Department Operations", "icon": "briefcase"}, {"page": "fulfillment", "label": "Acquisition Hub", "icon": "check"}, {"page": "procurement", "label": "Procurement", "icon": "cart"}, {"page": "inventory", "label": "Inventory", "icon": "inventory"}, {"page": "assets", "label": "Assets", "icon": "assets"},
+    {"section": "DEPARTMENTS & OPERATIONS", "items": [
+        {"page": "workspace", "label": "Department Workspace", "icon": "briefcase"}, {"page": "catalog", "label": "Department Catalogue", "icon": "inventory"}, {"page": "operations", "label": "Department Operations", "icon": "briefcase"}, {"page": "fulfillment", "label": "Acquisition Hub", "icon": "check"}, {"page": "procurement", "label": "Procurement", "icon": "cart"}, {"page": "inventory", "label": "Inventory", "icon": "inventory"}, {"page": "assets", "label": "Assets", "icon": "assets"},
     ]},
     {"section": "ORGANIZATION", "items": [
         {"page": "departments", "label": "Departments", "icon": "building"}, {"page": "staff", "label": "Staff", "icon": "users"}, {"page": "reports", "label": "Reports", "icon": "reports"}, {"page": "audit", "label": "Live Activity & Audit", "icon": "audit"},
     ]},
+    {"section": "INSIGHTS", "items": [{"page": "analytics", "label": "Analytics", "icon": "analytics"}]},
     {"section": "SYSTEM", "items": [{"page": "settings", "label": "Settings", "icon": "settings"}]},
 ]
 
@@ -19,6 +20,8 @@ PAGE_TITLES = {
     "workspace": ("Department Workspace", "Job-focused tools, actions and KPIs for the signed-in department."),
     "catalog": ("Department Catalogue", "Role-aware equipment, materials, consumables and custom items for the signed-in department."),
     "analytics": ("Analytics", "Explore financial, operational and departmental performance."),
+    "income": ("Income & Sales", "Sales, fees, service income and other money coming into the organization, with staff accountability."),
+    "expenses": ("Expenses & Expenditure", "Detailed money-out tracking by department, date, vendor, payment method and accountable staff."),
     "finance": ("Finance", "Income, revenue, expenditure, cash flow, budgets and financial position."),
     "requests": ("Requests & Approvals", "From staff need to approval, money-sent confirmation, purchase evidence and final accountability."),
     "operations": ("Department Operations", "Job-specific operational actions, accountable records and live staff activity."),

@@ -4,7 +4,8 @@
 from collections import Counter
 from datetime import datetime, timezone
 from sqlalchemy import func
-from models import ActivityEvent, AssetItem, DepartmentOperation, FinancePayable, FinanceReceivable, FinancialRecord, InventoryItem, Notification, PurchaseRequest
+from core.datetime_utils import as_utc
+from models import ActivityEvent, AssetItem, DepartmentOperation, FinancePayable, FinanceReceivable, FinancialRecord, InventoryItem, Notification, PurchaseRequest, StaffReport
 from packages.database import db
 
 INCOME_TYPES = {"income", "revenue"}
@@ -23,19 +24,23 @@ def _fmt(currency, value):
 
 
 def _scope(query, model, user, management_roles=MANAGEMENT_ROLES):
-    if user.role not in management_roles and user.department_id and hasattr(model, "department_id"): query = query.filter(model.department_id == user.department_id)
+    if user.role not in management_roles:
+        if user.department_id and hasattr(model, "department_id"): query = query.filter(model.department_id == user.department_id)
+        elif hasattr(model, "created_by_id"): query = query.filter(model.created_by_id == user.id)
+        elif hasattr(model, "added_by_id"): query = query.filter(model.added_by_id == user.id)
+        else: query = query.filter(False)
     return query
 
 
 def build_daily_briefing(user):
     """Return large, sequential, permission-aware briefing slides from today's real records and current outstanding positions."""
-    now = datetime.now(timezone.utc); db_now = now.replace(tzinfo=None); today = db_now.replace(hour=0, minute=0, second=0, microsecond=0); currency = user.organization.currency or "NGN"; scope_name = user.organization.name if user.role in MANAGEMENT_ROLES else (user.department.name if user.department else user.organization.name)
+    now = datetime.now(timezone.utc); today = now.replace(hour=0, minute=0, second=0, microsecond=0); currency = user.organization.currency or "NGN"; scope_name = user.organization.name if user.role in MANAGEMENT_ROLES else (user.department.name if user.department else user.organization.name)
 
     finance_query = _scope(FinancialRecord.query.filter(FinancialRecord.organization_id == user.organization_id, FinancialRecord.status == "posted", FinancialRecord.occurred_at >= today), FinancialRecord, user)
     finance_rows = finance_query.all(); today_income = sum(_money(row.amount) for row in finance_rows if row.record_type in INCOME_TYPES); today_expense = sum(_money(row.amount) for row in finance_rows if row.record_type in EXPENSE_TYPES); today_net = today_income - today_expense
 
     request_query = PurchaseRequest.query.filter(PurchaseRequest.organization_id == user.organization_id); request_query = request_query if user.role in REQUEST_OVERSIGHT_ROLES else request_query.filter(PurchaseRequest.department_id == user.department_id)
-    request_rows = request_query.order_by(PurchaseRequest.created_at.desc()).all(); new_requests = sum(1 for row in request_rows if row.created_at and row.created_at >= today); pending_requests = sum(1 for row in request_rows if row.status == "submitted"); urgent_requests = sum(1 for row in request_rows if row.status == "submitted" and str(row.urgency or "").lower() in {"urgent", "critical"}); acquisition_due = sum(1 for row in request_rows if row.status in {"approved", "money_sent"})
+    request_rows = request_query.order_by(PurchaseRequest.created_at.desc()).all(); new_requests = sum(1 for row in request_rows if row.created_at and as_utc(row.created_at) >= today); pending_requests = sum(1 for row in request_rows if row.status == "submitted"); urgent_requests = sum(1 for row in request_rows if row.status == "submitted" and str(row.urgency or "").lower() in {"urgent", "critical"}); acquisition_due = sum(1 for row in request_rows if row.status in {"approved", "money_sent"})
 
     inventory_query = _scope(InventoryItem.query.filter(InventoryItem.organization_id == user.organization_id), InventoryItem, user, REQUEST_OVERSIGHT_ROLES); inventory_rows = inventory_query.all(); inventory_value = sum(row.total_value for row in inventory_rows); low_stock = sum(1 for row in inventory_rows if _money(row.reorder_level) > 0 and _money(row.quantity) <= _money(row.reorder_level))
     asset_query = _scope(AssetItem.query.filter(AssetItem.organization_id == user.organization_id), AssetItem, user, REQUEST_OVERSIGHT_ROLES); asset_rows = asset_query.all(); asset_value = sum(row.total_value for row in asset_rows)
@@ -45,7 +50,7 @@ def build_daily_briefing(user):
     department_counts = Counter((row.department.name if row.department else "General") for row in activity_rows); busiest_department = department_counts.most_common(1)[0] if department_counts else None
 
     receivable_query = _scope(FinanceReceivable.query.filter(FinanceReceivable.organization_id == user.organization_id, ~FinanceReceivable.status.in_(["paid", "cancelled"])), FinanceReceivable, user); payable_query = _scope(FinancePayable.query.filter(FinancePayable.organization_id == user.organization_id, ~FinancePayable.status.in_(["paid", "cancelled"])), FinancePayable, user); ar_balance = sum(row.balance for row in receivable_query.all()); ap_balance = sum(row.balance for row in payable_query.all())
-    unread = Notification.query.filter_by(organization_id=user.organization_id, user_id=user.id, is_read=False).count()
+    unread = Notification.query.filter_by(organization_id=user.organization_id, user_id=user.id, is_read=False).count(); reports_waiting = StaffReport.query.filter_by(organization_id=user.organization_id, status="submitted").count() if user.role in {"owner","admin"} else 0
 
     slides = [
         {"tone":"blue","icon":"sparkles","kicker":"YOUR SAGE BRIEF","title":f"Good {('morning' if now.hour < 12 else 'afternoon' if now.hour < 17 else 'evening')}, {user.first_name}.","message":f"Here is the live status for {scope_name}. These figures come from your current SAGE records and update as your team works.","metric":f"{activity_count} accountable action{'s' if activity_count != 1 else ''} today","route":"dashboard","action_label":"View dashboard"},
@@ -55,5 +60,6 @@ def build_daily_briefing(user):
         {"tone":"blue","icon":"briefcase","kicker":"TODAY · OPERATIONS","title":f"{operations_today} department operation{'s' if operations_today != 1 else ''} recorded","message":(f"{busiest_department[0]} currently has the most tracked activity today ({busiest_department[1]} event(s))." if busiest_department else "No non-navigation operational activity has been recorded yet today."),"metric":f"{activity_count} meaningful tracked event{'s' if activity_count != 1 else ''}","route":"operations","action_label":"Open operations"},
     ]
     if user.role in MANAGEMENT_ROLES or user.role == "finance": slides.append({"tone":"orange" if ap_balance else "blue","icon":"finance","kicker":"OUTSTANDING MONEY","title":f"Receivable {_fmt(currency, ar_balance)} · Payable {_fmt(currency, ap_balance)}","message":"This shows money customers still owe and supplier/other obligations currently outstanding in SAGE.","metric":f"Net outstanding {_fmt(currency, ar_balance - ap_balance)}","route":"finance","action_label":"Review AR / AP"})
+    if user.role in {"owner","admin"}: slides.append({"tone":"orange" if reports_waiting else "green","icon":"reports","kicker":"STAFF REPORTS","title":f"{reports_waiting} report{'s' if reports_waiting != 1 else ''} waiting for review","message":"Submitted Daily, Weekly, Monthly and Quarterly staff reports are available in your Report Inbox with written notes and source activity.","metric":"Management acknowledgement keeps the reporting loop accountable","route":"reports","action_label":"Open Report Inbox"})
     slides.append({"tone":"red" if unread else "green","icon":"bell","kicker":"YOUR ALERTS","title":f"{unread} unread notification{'s' if unread != 1 else ''}","message":"Important approvals, staff submissions, evidence uploads and system alerts stay available in the notification centre after this briefing closes.","metric":"Live tracking is active","route":"audit" if user.role in {"owner", "admin", "finance"} else "dashboard","action_label":"View activity"})
     return {"generated_at": now.isoformat(), "scope": scope_name, "currency": currency, "slides": slides}

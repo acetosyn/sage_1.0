@@ -2,6 +2,10 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#07090f"><title>Staff registration · SAGE</title>
+  <script>
+    /* SAGE THEME PRE-PAINT: apply the saved appearance before CSS/browser paint so light/sky/sage/sand/slate never flash through dark on reload. */
+    (()=>{try{const colors={dark:'#050505',light:'#f6f7f9',sky:'#edf7ff',sage:'#f0f5f1',sand:'#f7f3eb',slate:'#111720'},saved=localStorage.getItem('sage-theme')||localStorage.getItem('vision-theme')||'dark',theme=Object.prototype.hasOwnProperty.call(colors,saved)?saved:'dark',html=document.documentElement;html.dataset.theme=theme;html.style.backgroundColor=colors[theme];html.style.colorScheme=['dark','slate'].includes(theme)?'dark':'light';const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute('content',colors[theme]);}catch(_){}})();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="{{ url_for('static', filename='css/vision.css') }}">
 </head>
 <body class="auth-body">
@@ -9,7 +13,7 @@
   <div class="staff-auth-shell">
     <button class="icon-button auth-theme" id="authTheme"><svg class="sun-icon"><use href="#i-sun"/></svg><svg class="moon-icon"><use href="#i-moon"/></svg></button>
     <div class="staff-register-card">
-      <div class="auth-logo-mobile visible-logo"><span class="sage-native-brand auth-native-brand mobile"><span class="sage-mark"><i></i></span><span class="sage-wordmark"><b>S</b><b class="sage-a" aria-hidden="true">Λ</b><b>G</b><b>E</b><small>SAGE</small></span></span></div>
+      <div class="auth-logo-mobile visible-logo"><span class="sage-native-brand auth-native-brand mobile"><span class="sage-mark"><i></i></span><span class="sage-wordmark"><b>S</b><b class="sage-a" aria-hidden="true">Λ</b><b>G</b><b>E</b></span></span></div>
       {% if invitation %}
       <span class="auth-kicker">STAFF INVITATION</span><h1>Join {{ invitation.organization.name }}</h1><p>Your organization has already assigned your department and access role. Complete your personal profile once to activate the account.</p>
       <div class="invite-summary"><div><span>Department</span><strong>{{ invitation.department.name if invitation.department else 'Not assigned' }}</strong></div><div><span>Role</span><strong>{{ invitation.role|replace('_',' ')|title }}</strong></div><div><span>Email</span><strong>{{ invitation.email }}</strong></div></div>
@@ -25,7 +29,27 @@
       {% endif %}
     </div>
   </div>
-  <div class="launch-overlay" id="registrationSuccess" aria-hidden="true"><div class="launch-scene"><div class="vision-orbit"><span class="orbit-core"><span></span></span><i class="orbit-ring one"><b></b></i><i class="orbit-ring two"><b></b></i></div><span class="launch-kicker">ACCOUNT ACTIVATED</span><h2>Opening your department workspace</h2><p id="launchStatus">Applying your role and access permissions...</p><div class="launch-progress"><span></span></div></div></div>
+  <div class="launch-overlay launch-premium-overlay" id="registrationSuccess" aria-hidden="true" data-launch-kind="staff">
+    <div class="launch-aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="launch-scene launch-premium-scene">
+      <div class="launch-setup-stage">
+        <div class="launch-icon-stage" aria-hidden="true">
+          <div class="launch-orbit-ring launch-orbit-ring-one"></div><div class="launch-orbit-ring launch-orbit-ring-two"></div>
+          <div class="launch-icon-orbit">
+            <span class="launch-icon-chip" style="--i:0"><b><svg><use href="#i-shield"/></svg></b></span>
+            <span class="launch-icon-chip" style="--i:1"><b><svg><use href="#i-users"/></svg></b></span>
+            <span class="launch-icon-chip" style="--i:2"><b><svg><use href="#i-building"/></svg></b></span>
+            <span class="launch-icon-chip" style="--i:3"><b><svg><use href="#i-briefcase"/></svg></b></span>
+            <span class="launch-icon-chip" style="--i:4"><b><svg><use href="#i-bell"/></svg></b></span>
+            <span class="launch-icon-chip" style="--i:5"><b><svg><use href="#i-dashboard"/></svg></b></span>
+          </div>
+          <div class="launch-core-brand"><span class="sage-mark"><i></i></span><span class="launch-core-pulse"></span></div>
+        </div>
+        <div class="launch-copy-stage"><span class="launch-kicker">ACCOUNT ACTIVATED</span><h2 id="launchTitle">Opening your workspace</h2><p id="launchStatus">Applying your role and access permissions...</p><div class="launch-progress"><span></span></div><div class="launch-step-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div>
+      </div>
+      <div class="launch-welcome-stage" aria-hidden="true"><span class="launch-welcome-kicker">WELCOME TO</span><div class="launch-sage-word" aria-label="SAGE"><span>S</span><span class="launch-sage-a">Λ</span><span>G</span><span>E</span></div><div class="launch-ready-mark"><svg><use href="#i-sparkles"/></svg></div></div>
+    </div>
+  </div>
   <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
 </body>
 </html>

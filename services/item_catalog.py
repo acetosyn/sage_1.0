@@ -10,7 +10,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 CATALOG_FILE = BASE_DIR / "static" / "data" / "sage_item_catalog.json"
 
 STOP_WORDS = {"and", "the", "department", "unit", "office", "company", "centre", "center", "service", "services"}
-BUSINESS_LABEL_ALIASES = {"School / Educational Institution": "School / Educational Institution", "Hospital / Clinic / Diagnostic Centre": "Hospital / Clinic / Diagnostic Centre", "Hotel / Hospitality Company": "Hotel / Hospitality Company", "Manufacturing Company / Factory": "Manufacturing Company / Factory", "Retail / Supermarket / Shopping Company": "Retail / Supermarket / Shopping Company", "Construction / Engineering Company": "Construction / Engineering Company", "Logistics / Transport Company": "Logistics / Transport Company", "Restaurant / Fast Food / Catering Company": "Restaurant / Fast Food / Catering Company", "Technology / Software Company": "Technology / Software Company", "NGO / Foundation / Non-Profit Organization": "NGO / Foundation / Non-Profit Organization"}
+BUSINESS_LABEL_ALIASES = {
+    "School / Educational Institution":"School / Educational Institution", "Hospital / Clinic / Diagnostic Centre":"Hospital / Clinic / Diagnostic Centre", "Hotel / Hospitality Company":"Hotel / Hospitality Company", "Manufacturing Company / Factory":"Manufacturing Company / Factory", "Retail / Supermarket / Shopping Company":"Retail / Supermarket / Shopping Company", "Construction / Engineering Company":"Construction / Engineering Company", "Logistics / Transport Company":"Logistics / Transport Company", "Restaurant / Fast Food / Catering Company":"Restaurant / Fast Food / Catering Company", "Technology / Software Company":"Technology / Software Company", "NGO / Foundation / Non-Profit Organization":"NGO / Foundation / Non-Profit Organization",
+    "Agriculture / Farm / Agro-Processing Company":"Manufacturing Company / Factory", "Real Estate / Property Development Company":"Construction / Engineering Company", "Banking / Microfinance / Fintech / Financial Services":"Technology / Software Company", "Professional Services / Consulting / Legal / Accounting Firm":"Technology / Software Company", "Media / Creative / Advertising / Production Company":"Technology / Software Company", "Fashion / Garment / Textile Company":"Retail / Supermarket / Shopping Company", "Beauty / Salon / Spa / Wellness Company":"Hotel / Hospitality Company", "Wholesale / Distribution / Trading Company":"Retail / Supermarket / Shopping Company", "Energy / Solar / Power Company":"Construction / Engineering Company", "Oil / Gas / Petroleum Services Company":"Logistics / Transport Company", "Telecommunications / ISP / Communications Company":"Technology / Software Company", "Religious / Faith-Based Organization":"NGO / Foundation / Non-Profit Organization", "Travel / Tourism / Ticketing Company":"Hotel / Hospitality Company", "Facilities / Cleaning / Property Management Company":"Hotel / Hospitality Company", "Printing / Publishing / Branding Company":"Manufacturing Company / Factory", "Events / Entertainment / Production Company":"Hotel / Hospitality Company", "Security / Guarding / Protection Services Company":"Logistics / Transport Company", "Automotive / Mechanic / Car Dealership Company":"Logistics / Transport Company", "Mining / Quarry / Solid Minerals Company":"Construction / Engineering Company", "Other / Custom Organization":"Technology / Software Company"
+}
 
 # Explicit aliases cover common onboarding names that are shorter than the master-catalogue headings.
 DEPARTMENT_ALIASES = {
@@ -20,6 +23,9 @@ DEPARTMENT_ALIASES = {
     "finance": ["finance & accounts", "finance / accounts"], "finance & accounts": ["finance & accounts", "finance / accounts"],
     "front office": ["front office / reception"], "human resources": ["human resources"], "academic department": ["academic / classroom"],
     "sales / pos": ["sales / pos", "sales"], "customer service": ["customer service", "front desk / customer care"], "logistics": ["operations / control room", "dispatch / last mile", "warehouse / fulfilment"], "procurement": ["procurement"],
+    "farm operations": ["production", "operations / control room"], "crop production": ["production"], "livestock": ["production"], "poultry": ["production"], "fishery / aquaculture": ["production"], "agro-processing / production": ["production"], "cold store / produce storage": ["warehouse / stores", "cold room / storage"],
+    "property management": ["facilities management", "projects / project management"], "sales / leasing": ["sales", "sales floor"], "agent banking / agency network": ["finance & accounts", "customer service"], "photography": ["content / media", "marketing / growth"], "videography / cinematography": ["content / media", "marketing / growth"], "digital / social media": ["content / media", "marketing / growth"],
+    "tailoring / garment production": ["fashion / clothing", "production"], "salon / hair services": ["spa / wellness", "customer service"], "barbing / grooming": ["spa / wellness", "customer service"], "makeup / beauty services": ["spa / wellness", "customer service"], "event planning / production": ["banquet / events", "sales / marketing / events"], "entertainment / talent": ["banquet / events", "content / media"],
 }
 
 ICON_RULES = [
@@ -66,7 +72,7 @@ def business_catalog(business_type):
 
 
 def department_match(business_type, department_name):
-    business_name, departments = business_catalog(business_type)
+    business_name, departments = business_catalog(business_type); catalogue = load_catalog()
     if not departments: return business_name, None, []
     requested = normalize(department_name); direct = {normalize(name): name for name in departments}
     if requested in direct: matched = direct[requested]; return business_name, matched, departments[matched]
@@ -76,7 +82,18 @@ def department_match(business_type, department_name):
     for name, items in departments.items():
         candidate = tokens(name); overlap = len(wanted & candidate); coverage = overlap / max(1, len(wanted)); specificity = overlap / max(1, len(candidate)); ranked.append((coverage * 3 + specificity + overlap, name, items))
     score, matched, items = max(ranked, default=(0, None, []), key=lambda row: row[0])
-    return (business_name, matched, items) if score > 0 else (business_name, None, [])
+    if score > 1.25: return business_name, matched, items
+    # Cross-industry fallback keeps expanded onboarding departments useful even when the original master catalogue has no native business family yet.
+    alias_targets = DEPARTMENT_ALIASES.get(requested, []); cross_ranked = []
+    for catalogue_business, catalogue_departments in catalogue.items():
+        catalogue_direct = {normalize(name): name for name in catalogue_departments}
+        for alias in alias_targets:
+            if normalize(alias) in catalogue_direct:
+                found = catalogue_direct[normalize(alias)]; return catalogue_business, found, catalogue_departments[found]
+        for name, candidate_items in catalogue_departments.items():
+            candidate = tokens(name); overlap = len(wanted & candidate); coverage = overlap / max(1, len(wanted)); specificity = overlap / max(1, len(candidate)); cross_ranked.append((coverage * 3 + specificity + overlap, catalogue_business, name, candidate_items))
+    cross_score, cross_business, cross_department, cross_items = max(cross_ranked, default=(0, None, None, []), key=lambda row: row[0])
+    return (cross_business, cross_department, cross_items) if cross_score > 1.75 else (business_name, None, [])
 
 
 def item_icon(name, category=""):

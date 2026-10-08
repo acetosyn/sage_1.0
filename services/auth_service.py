@@ -87,6 +87,16 @@ def authenticate(email, password):
     return user
 
 
+def change_password(email, current_password, new_password):
+    """Allow an account holder to rotate only their password; the email/login identifier is never changed here."""
+    user = User.query.filter(func.lower(User.email) == clean_email(email)).first()
+    if not user or not user.check_password(current_password or ""): raise ValueError("The email address or current password is incorrect.")
+    if user.status != "active": raise ValueError("This account is not active. Please contact your organization administrator.")
+    if len(new_password or "") < 8: raise ValueError("New password must contain at least 8 characters.")
+    if user.check_password(new_password or ""): raise ValueError("Choose a new password that is different from your current password.")
+    user.set_password(new_password); create_audit(user.organization_id, user.id, "password_changed", f"{user.display_name} changed their SAGE sign-in password."); db.session.commit(); return user
+
+
 # ==========================================================
 # STAFF INVITATION / REGISTRATION
 # ==========================================================
