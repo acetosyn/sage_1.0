@@ -2,11 +2,11 @@
 # Implements request -> approval -> money-sent -> purchase/evidence -> inventory/finance posting with immutable final confirmation.
 
 import re
-from datetime import date, datetime, timezone
-from core.datetime_utils import as_utc
+from datetime import date, datetime, timedelta, timezone
+from core.datetime_utils import as_utc, parse_client_datetime
 from decimal import Decimal, InvalidOperation
 from sqlalchemy import func
-from models import ActivityEvent, AssetItem, AssetMovement, Attachment, CatalogItem, Department, FinancialRecord, FulfillmentLine, InventoryItem, PurchaseFulfillment, PurchaseRequest, RequestFunding, RequestItem, StockMovement, User
+from models import ActivityEvent, AssetItem, AssetMovement, Attachment, CatalogItem, Department, FinanceLedgerEntry, FinancialRecord, FulfillmentLine, InventoryItem, PurchaseFulfillment, PurchaseRequest, RequestFunding, RequestBalanceTransaction, RequestItem, StockMovement, User
 from packages.database import db
 from services.notification_service import notify_user, record_activity
 from services.storage_service import save_attachment
@@ -36,6 +36,117 @@ def next_reference(prefix, model, organization_id, field="reference"):
     today = datetime.now(timezone.utc).strftime("%y%m%d"); org_code = str(organization_id or "ORG").replace("-", "")[:6].upper(); pattern = f"{prefix}-{org_code}-{today}-%"
     count = model.query.filter(getattr(model, "organization_id") == organization_id, getattr(model, field).like(pattern)).count() + 1
     return f"{prefix}-{org_code}-{today}-{count:04d}"
+
+
+# ==========================================================
+# REQUEST FUNDING -> MONEY-OUT SYNCHRONIZATION
+# The money transfer still occurs outside SAGE. SAGE records the release once in both finance ledgers so dashboards and Expenses show exactly what was sent, when, why and to which request/department.
+# ==========================================================
+
+REQUEST_RELEASE_CATEGORY = "Request funding / cash released"
+REQUEST_RETURN_CATEGORY = "Request balance returned"
+
+
+def request_balance_breakdown(request_row):
+    """Return the complete accountable funding chain for one request. Internal allocations move existing cash between requests and never create a second organization expense."""
+    funding, fulfillment = request_row.funding, request_row.fulfillment; sent = Decimal(funding.amount_sent or 0) if funding else Decimal("0"); actual = Decimal(fulfillment.actual_total or 0) if fulfillment and fulfillment.confirmed_at else Decimal("0")
+    incoming = db.session.query(func.coalesce(func.sum(RequestBalanceTransaction.amount), 0)).filter(RequestBalanceTransaction.organization_id == request_row.organization_id, RequestBalanceTransaction.target_request_id == request_row.id, RequestBalanceTransaction.transaction_type == "allocation", RequestBalanceTransaction.status == "posted").scalar() or 0
+    outgoing = db.session.query(func.coalesce(func.sum(RequestBalanceTransaction.amount), 0)).filter(RequestBalanceTransaction.organization_id == request_row.organization_id, RequestBalanceTransaction.source_request_id == request_row.id, RequestBalanceTransaction.transaction_type == "allocation", RequestBalanceTransaction.status == "posted").scalar() or 0
+    returned = db.session.query(func.coalesce(func.sum(RequestBalanceTransaction.amount), 0)).filter(RequestBalanceTransaction.organization_id == request_row.organization_id, RequestBalanceTransaction.source_request_id == request_row.id, RequestBalanceTransaction.transaction_type == "return", RequestBalanceTransaction.status == "posted").scalar() or 0
+    incoming, outgoing, returned = Decimal(incoming), Decimal(outgoing), Decimal(returned); available_before_purchase = sent + incoming; balance = available_before_purchase - actual - outgoing - returned; owner_needed = max(Decimal(request_row.estimated_total or 0) - incoming, Decimal("0"))
+    return {"owner_sent":sent,"inherited":incoming,"available_before_purchase":available_before_purchase,"actual":actual,"allocated_out":outgoing,"returned":returned,"balance":balance,"owner_needed":owner_needed,"reusable":max(balance,Decimal("0")) if fulfillment and fulfillment.confirmed_at else Decimal("0")}
+
+
+def request_balance(request_row):
+    detail = request_balance_breakdown(request_row); return detail["owner_sent"], detail["actual"], detail["balance"]
+
+
+def balance_sources_for_user(user, exclude_request_id=None):
+    """Reusable balances belong to the staff member whose funded request produced them; only confirmed acquisitions can become reusable credit."""
+    query = PurchaseRequest.query.filter_by(organization_id=user.organization_id, requester_id=user.id).filter(PurchaseRequest.status.in_(["fulfilled", "verified"]))
+    if exclude_request_id: query = query.filter(PurchaseRequest.id != exclude_request_id)
+    rows = []
+    for request_row in query.order_by(PurchaseRequest.created_at.asc()).all():
+        detail = request_balance_breakdown(request_row)
+        if detail["reusable"] > 0: rows.append({"request":request_row,"available":detail["reusable"],"detail":detail})
+    return rows
+
+
+def reusable_balance_for_user(user, exclude_request_id=None): return sum((item["available"] for item in balance_sources_for_user(user, exclude_request_id)), Decimal("0"))
+
+
+def allocate_request_balance(app, user, target_request, amount):
+    """Apply the staff member's older confirmed request balances to a new request, oldest balance first. This is an internal transfer, not a new expense."""
+    requested = money(amount, "0")
+    if requested <= 0: return Decimal("0"), []
+    cap = Decimal(target_request.estimated_total or 0); requested = min(requested, cap); available = reusable_balance_for_user(user, target_request.id)
+    if requested > available: raise ValueError(f"You only have {user.organization.currency} {available:,.2f} reusable request balance available.")
+    remaining, created = requested, []
+    for source in balance_sources_for_user(user, target_request.id):
+        if remaining <= 0: break
+        applied = min(source["available"], remaining); tx = RequestBalanceTransaction(reference=next_reference("BAL", RequestBalanceTransaction, user.organization_id), organization_id=user.organization_id, department_id=target_request.department_id, holder_user_id=user.id, source_request_id=source["request"].id, target_request_id=target_request.id, created_by_id=user.id, transaction_type="allocation", amount=applied, currency=target_request.currency, note=f"Applied to {target_request.reference} · {target_request.title}", status="posted"); db.session.add(tx); created.append(tx); remaining -= applied
+    applied_total = requested - remaining
+    if applied_total > 0: record_activity(app, user, "request_balance_allocated", "Existing balance applied to request", f"{user.display_name} applied {user.organization.currency} {applied_total:,.2f} of prior request balance to {target_request.reference}. Owner funding required is now {user.organization.currency} {max(cap-applied_total,Decimal('0')):,.2f}.", "request", target_request.id, {"balance_applied":float(applied_total),"gross_request":float(cap),"owner_needed":float(max(cap-applied_total,Decimal('0'))),"source_count":len(created)}, notify_owner=True, email_owner=False, level="info")
+    return applied_total, created
+
+
+def post_balance_return_finance(actor, request_row, transaction):
+    """A returned staff balance is an expense recovery: it reduces net expenditure without pretending it is sales/income."""
+    description = f"{request_row.reference} · balance returned by {transaction.holder.display_name if transaction.holder else 'staff'} · {request_row.title}"[:255]; now = transaction.created_at or datetime.now(timezone.utc)
+    ledger = FinanceLedgerEntry(reference=next_reference("LED", FinanceLedgerEntry, actor.organization_id), organization_id=actor.organization_id, department_id=request_row.department_id, created_by_id=actor.id, entry_type="adjustment", direction="in", category=REQUEST_RETURN_CATEGORY, counterparty=transaction.holder.display_name if transaction.holder else "Staff", description=description, amount=transaction.amount, currency=request_row.currency, payment_method=transaction.payment_method, external_reference=transaction.payment_reference, status="posted", occurred_at=now, posted_at=datetime.now(timezone.utc), source_entity_type="request_balance_return", source_entity_id=transaction.id, notes=transaction.note); db.session.add(ledger)
+    db.session.add(FinancialRecord(reference=next_reference("FIN", FinancialRecord, actor.organization_id), organization_id=actor.organization_id, department_id=request_row.department_id, created_by_id=actor.id, record_type="expense_recovery", category=REQUEST_RETURN_CATEGORY, description=description, amount=transaction.amount, currency=request_row.currency, status="posted", source_entity_type="request_balance_return", source_entity_id=transaction.id, occurred_at=now)); return ledger
+
+
+def return_request_balance(app, actor, request_row, amount, note=None, payment_method=None, payment_reference=None):
+    """Record money physically returned to management from a completed request balance."""
+    if actor.organization_id != request_row.organization_id: raise PermissionError("This request belongs to another organization.")
+    if actor.role not in {"owner","admin","finance"} and actor.id != request_row.requester_id: raise PermissionError("Only the requesting staff member or management can return this request balance.")
+    detail = request_balance_breakdown(request_row)
+    if not request_row.fulfillment or not request_row.fulfillment.confirmed_at: raise ValueError("Complete the acquisition and submit evidence before returning a remaining balance.")
+    value = money(amount, detail["reusable"]);
+    if value <= 0: raise ValueError("Enter an amount to return.")
+    if value > detail["reusable"]: raise ValueError(f"Return amount exceeds the available balance of {request_row.currency} {detail['reusable']:,.2f}.")
+    tx = RequestBalanceTransaction(reference=next_reference("BAL", RequestBalanceTransaction, actor.organization_id), organization_id=actor.organization_id, department_id=request_row.department_id, holder_user_id=request_row.requester_id, source_request_id=request_row.id, target_request_id=None, created_by_id=actor.id, transaction_type="return", amount=value, currency=request_row.currency, payment_method=(str(payment_method or "").strip() or None), payment_reference=(str(payment_reference or "").strip() or None), note=(str(note or "").strip() or f"Balance returned from {request_row.reference}"), status="posted"); db.session.add(tx); db.session.flush(); post_balance_return_finance(actor, request_row, tx); updated = request_balance_breakdown(request_row)
+    message = f"{request_row.currency} {value:,.2f} was returned from {request_row.reference}. Remaining reusable balance: {request_row.currency} {updated['reusable']:,.2f}."; record_activity(app, actor, "request_balance_returned", "Request balance returned", message, "request_balance", tx.id, {"request":request_row.reference,"returned":float(value),"remaining":float(updated["reusable"])}, notify_owner=True, email_owner=False, level="success")
+    if request_row.requester and request_row.requester.id != actor.id: notify_user(app, request_row.requester, "Balance return recorded", message, "success", "request", request_row.id, email=False)
+    db.session.commit(); return tx, updated
+
+
+def notify_request_team(app, actor, request_row, title, message, level="info", entity_type="request", entity_id=None, requester_email=False, include_actor=False):
+    """Push one tenant-safe request event to the requester and active staff in the same department. Management already receives audit alerts, so ordinary team members are the extra audience here."""
+    delivered = set(); entity_id = entity_id or request_row.id
+    if include_actor and actor and actor.status == "active": notify_user(app, actor, title, message, level, entity_type, entity_id, email=False); delivered.add(actor.id)
+    requester = request_row.requester
+    if requester and requester.status == "active" and requester.id not in delivered and (include_actor or not actor or requester.id != actor.id): notify_user(app, requester, title, message, level, entity_type, entity_id, email=bool(requester_email)); delivered.add(requester.id)
+    if request_row.department_id:
+        teammates = User.query.filter_by(organization_id=request_row.organization_id, department_id=request_row.department_id, status="active").all()
+        for teammate in teammates:
+            if teammate.id in delivered or (actor and teammate.id == actor.id) or teammate.role in {"owner", "admin"}: continue
+            notify_user(app, teammate, title, message, level, entity_type, entity_id, email=False); delivered.add(teammate.id)
+    return delivered
+
+
+def sync_request_release_finance(actor, request_row):
+    funding, fulfillment = request_row.funding, request_row.fulfillment; detail = request_balance_breakdown(request_row); sent, actual = detail["owner_sent"], detail["actual"]; cash_out = sent if sent > 0 else (actual if actual > 0 and not funding else Decimal("0")); occurred_at = (funding.funded_at if funding else None) or request_row.money_sent_at or (fulfillment.confirmed_at if fulfillment else None) or datetime.now(timezone.utc); department_name = request_row.department.name if request_row.department else "Organization"; requester_name = request_row.requester.display_name if request_row.requester else "Staff"
+    parts = [f"Owner released {request_row.currency} {sent:,.2f}"]
+    if detail["inherited"] > 0: parts.append(f"balance applied {request_row.currency} {detail['inherited']:,.2f}")
+    if actual > 0: parts.append(f"actual purchase {request_row.currency} {actual:,.2f}")
+    if detail["allocated_out"] > 0: parts.append(f"reallocated {request_row.currency} {detail['allocated_out']:,.2f}")
+    if detail["returned"] > 0: parts.append(f"returned {request_row.currency} {detail['returned']:,.2f}")
+    parts.append(f"{'balance' if detail['balance'] >= 0 else 'shortfall'} {request_row.currency} {abs(detail['balance']):,.2f}"); description = f"{request_row.reference} · {request_row.title} · {department_name} · {' · '.join(parts)}"[:300]
+    ledger = FinanceLedgerEntry.query.filter_by(organization_id=actor.organization_id, source_entity_type="request", source_entity_id=request_row.id, category=REQUEST_RELEASE_CATEGORY).order_by(FinanceLedgerEntry.created_at.asc()).first(); summary = FinancialRecord.query.filter_by(organization_id=actor.organization_id, source_entity_type="request_or_fulfillment", source_entity_id=request_row.id, category=REQUEST_RELEASE_CATEGORY).order_by(FinancialRecord.created_at.asc()).first()
+    if fulfillment:
+        for legacy in FinancialRecord.query.filter_by(organization_id=actor.organization_id, source_entity_type="request_or_fulfillment", source_entity_id=fulfillment.id, category="Actual procurement expenditure", status="posted").all(): legacy.status = "void"
+    if cash_out <= 0:
+        if ledger: ledger.status = "void"
+        if summary: summary.status = "void"
+        return None
+    if not ledger: ledger = FinanceLedgerEntry(reference=next_reference("LED", FinanceLedgerEntry, actor.organization_id), organization_id=actor.organization_id, department_id=request_row.department_id, created_by_id=actor.id, entry_type="expense", direction="out", category=REQUEST_RELEASE_CATEGORY, counterparty=requester_name, description=description, amount=cash_out, currency=request_row.currency, status="posted", occurred_at=occurred_at, posted_at=datetime.now(timezone.utc), source_entity_type="request", source_entity_id=request_row.id); db.session.add(ledger)
+    else: ledger.department_id, ledger.entry_type, ledger.direction, ledger.counterparty, ledger.description, ledger.amount, ledger.currency, ledger.payment_method, ledger.external_reference, ledger.status, ledger.occurred_at, ledger.posted_at = request_row.department_id, "expense", "out", requester_name, description, cash_out, request_row.currency, (funding.payment_method if funding else None), (funding.payment_reference if funding else None), "posted", occurred_at, ledger.posted_at or datetime.now(timezone.utc)
+    ledger.payment_method = funding.payment_method if funding else ledger.payment_method; ledger.external_reference = funding.payment_reference if funding else ledger.external_reference; ledger.notes = funding.note if funding else ledger.notes
+    if not summary: summary = FinancialRecord(reference=next_reference("FIN", FinancialRecord, actor.organization_id), organization_id=actor.organization_id, department_id=request_row.department_id, created_by_id=actor.id, record_type="expense", category=REQUEST_RELEASE_CATEGORY, description=description, amount=cash_out, currency=request_row.currency, status="posted", source_entity_type="request_or_fulfillment", source_entity_id=request_row.id, occurred_at=occurred_at); db.session.add(summary)
+    else: summary.department_id, summary.record_type, summary.description, summary.amount, summary.currency, summary.status, summary.occurred_at = request_row.department_id, "expense", description, cash_out, request_row.currency, "posted", occurred_at
+    return ledger
 
 
 def scoped_department(user, requested_department_id=None):
@@ -70,8 +181,9 @@ def create_request(app, user, payload):
         db.session.add(RequestItem(request_id=request_row.id, item_name=name, category=(raw.get("category") or "").strip() or None, unit=unit, quantity=qty, unit_cost=unit_cost, estimated_total=line_total)); ensure_catalog_item(user, department, name, raw.get("category"), unit); item_details.append({"name": name, "quantity": float(qty), "unit": unit, "unit_cost": float(unit_cost), "line_total": float(line_total)})
     if total <= 0: raise ValueError("Add at least one item with a valid estimated amount.")
     request_row.estimated_total = total; request_row.submitted_at = datetime.now(timezone.utc) if request_row.status == "submitted" else None
-    item_summary = "; ".join(f"{item['name']} — {item['quantity']:g} {item['unit']} × {user.organization.currency} {item['unit_cost']:,.2f}" for item in item_details); title_text = "Request submitted" if request_row.status == "submitted" else "Request saved as draft"; description = f"{user.display_name} {'submitted' if request_row.status == 'submitted' else 'saved'} {request_row.reference} for {department.name}: {request_row.title} ({user.organization.currency} {total:,.2f}).{f' Items: {item_summary}.' if item_summary else ''}"
-    record_activity(app, user, "request_created", title_text, description, "request", request_row.id, {"reference": request_row.reference, "amount": float(total), "status": request_row.status, "items": item_details}, notify_owner=request_row.status == "submitted", email_owner=request_row.status == "submitted", level="warning" if request_row.status == "submitted" else "info")
+    balance_requested = money(payload.get("balance_to_apply"), "0") if request_row.status == "submitted" else Decimal("0"); balance_applied, _balance_rows = allocate_request_balance(app, user, request_row, balance_requested) if balance_requested > 0 else (Decimal("0"), []); owner_needed = max(total - balance_applied, Decimal("0")); request_row._balance_applied, request_row._owner_amount_needed = balance_applied, owner_needed
+    item_summary = "; ".join(f"{item['name']} — {item['quantity']:g} {item['unit']} × {user.organization.currency} {item['unit_cost']:,.2f}" for item in item_details); title_text = "Request submitted" if request_row.status == "submitted" else "Request saved as draft"; balance_note = f" Existing balance applied: {user.organization.currency} {balance_applied:,.2f}; new owner funding required: {user.organization.currency} {owner_needed:,.2f}." if balance_applied > 0 else ""; description = f"{user.display_name} {'submitted' if request_row.status == 'submitted' else 'saved'} {request_row.reference} for {department.name}: {request_row.title} ({user.organization.currency} {total:,.2f}).{balance_note}{f' Items: {item_summary}.' if item_summary else ''}"
+    record_activity(app, user, "request_created", title_text, description, "request", request_row.id, {"reference": request_row.reference, "amount": float(total), "balance_applied": float(balance_applied), "owner_needed": float(owner_needed), "status": request_row.status, "items": item_details}, notify_owner=request_row.status == "submitted", email_owner=request_row.status == "submitted", level="warning" if request_row.status == "submitted" else "info")
     db.session.commit(); return request_row
 
 
@@ -84,20 +196,22 @@ def decide_request(app, actor, request_row, action, note=None):
     if action == "approve":
         if request_row.status not in {"submitted"}: raise ValueError("Only submitted requests can be approved.")
         request_row.status, request_row.approved_at, request_row.approved_by_id, request_row.decision_note = "approved", now, actor.id, note
-        if not request_row.funding: db.session.add(RequestFunding(request_id=request_row.id, organization_id=actor.organization_id, department_id=request_row.department_id, recorded_by_id=actor.id, approved_budget=request_row.estimated_total, amount_sent=0, currency=request_row.currency))
+        owner_needed = request_balance_breakdown(request_row)["owner_needed"]
+        if not request_row.funding: db.session.add(RequestFunding(request_id=request_row.id, organization_id=actor.organization_id, department_id=request_row.department_id, recorded_by_id=actor.id, approved_budget=owner_needed, amount_sent=0, currency=request_row.currency))
         from services.budget_control_service import sync_request_budget
-        sync_request_budget(request_row, actor)
+        sync_request_budget(request_row, actor, amount=owner_needed)
         title, message, level = "Request approved", f"{request_row.reference} for {request_row.title} was approved by {actor.display_name}. Stage 2 acquisition logging is now available; funding can be recorded separately.", "success"
     elif action == "money_sent":
-        if request_row.status not in {"approved"}: raise ValueError("Approve the request before marking money sent/granted.")
+        if request_row.status not in {"approved"}: raise ValueError("Approve the request before recording money sent/granted.")
         request_row.status, request_row.money_sent_at, request_row.money_sent_by_id, request_row.decision_note = "money_sent", now, actor.id, note
-        funding = request_row.funding or RequestFunding(request_id=request_row.id, organization_id=actor.organization_id, department_id=request_row.department_id, recorded_by_id=actor.id, approved_budget=request_row.estimated_total, amount_sent=request_row.estimated_total, currency=request_row.currency); funding.amount_sent = funding.amount_sent or request_row.estimated_total; funding.funded_at = now; db.session.add(funding)
-        existing_commitment = FinancialRecord.query.filter_by(organization_id=actor.organization_id, record_type="procurement", source_entity_id=request_row.id, status="posted").first()
-        if not existing_commitment: add_financial_record(actor, "procurement", request_row.title, funding.approved_budget or request_row.estimated_total, request_row.department_id, "Committed approved procurement", request_row.id, commit=False)
-        title, message, level = "Money sent / request granted", f"{request_row.reference} is now funded/granted. Record the actual acquisition, quantities and evidence in Stage 2.", "success"
+        owner_needed = request_balance_breakdown(request_row)["owner_needed"]; funding = request_row.funding or RequestFunding(request_id=request_row.id, organization_id=actor.organization_id, department_id=request_row.department_id, recorded_by_id=actor.id, approved_budget=owner_needed, amount_sent=owner_needed, currency=request_row.currency); funding.amount_sent = funding.amount_sent or owner_needed; funding.funded_at = now; funding.recorded_by_id = actor.id; db.session.add(funding); db.session.flush(); sync_request_release_finance(actor, request_row)
+        title, message, level = "Money sent / request granted", f"{request_row.reference}: {request_row.currency} {funding.amount_sent:,.2f} was recorded as released for {request_row.title}. The amount is now visible to the department and in Expenses; Stage 2 can record the actual purchase and remaining balance.", "success"
     elif action == "reject":
         if request_row.status not in {"submitted", "approved"}: raise ValueError("This request cannot be rejected at its current stage.")
         request_row.status, request_row.rejected_at, request_row.rejected_by_id, request_row.decision_note = "rejected", now, actor.id, note
+        restored = Decimal("0")
+        for tx in RequestBalanceTransaction.query.filter_by(organization_id=request_row.organization_id, target_request_id=request_row.id, transaction_type="allocation", status="posted").all(): restored += Decimal(tx.amount or 0); tx.status = "void"
+        if restored > 0: record_activity(app, actor, "request_balance_restored", "Applied balance restored", f"{request_row.reference} was rejected, so {request_row.currency} {restored:,.2f} of inherited request balance was automatically restored to the staff member's earlier request balance.", "request", request_row.id, {"restored_balance":float(restored)}, notify_owner=False, level="info")
         from services.budget_control_service import sync_request_budget
         sync_request_budget(request_row, actor, release=True)
         title, message, level = "Request rejected", f"{request_row.reference} for {request_row.title} was rejected by {actor.display_name}.{(' Note: ' + note) if note else ''}", "danger"
@@ -108,22 +222,24 @@ def decide_request(app, actor, request_row, action, note=None):
 
 
 def save_request_funding(app, actor, request_row, payload):
-    """Owner/finance budget + disbursement record for a request; money movement occurs outside SAGE, only the approval trail is stored here."""
+    """Record an approved budget and external cash release; any released amount becomes one traceable SAGE expense without pretending SAGE moved the money."""
     if actor.organization_id != request_row.organization_id or actor.role not in {"owner", "admin", "finance"}: raise PermissionError("You do not have permission to record request funding.")
     if request_row.status not in {"approved", "money_sent", "fulfilled", "verified"}: raise ValueError("Approve the request before recording its budget/funding.")
-    funding = request_row.funding or RequestFunding(request_id=request_row.id, organization_id=actor.organization_id, department_id=request_row.department_id, recorded_by_id=actor.id, currency=request_row.currency); before = {"request_status":request_row.status,"approved_budget":funding.approved_budget,"amount_sent":funding.amount_sent,"payment_method":funding.payment_method,"payment_reference":funding.payment_reference}
+    funding = request_row.funding or RequestFunding(request_id=request_row.id, organization_id=actor.organization_id, department_id=request_row.department_id, recorded_by_id=actor.id, currency=request_row.currency); before = {"request_status":request_row.status,"approved_budget":funding.approved_budget,"amount_sent":funding.amount_sent,"payment_method":funding.payment_method,"payment_reference":funding.payment_reference,"funded_at":funding.funded_at}
     funding.approved_budget = money(payload.get("approved_budget"), request_row.estimated_total); funding.amount_sent = money(payload.get("amount_sent"), funding.amount_sent or 0); funding.payment_method = str(payload.get("payment_method") or "").strip() or None; funding.payment_reference = str(payload.get("payment_reference") or "").strip() or None; funding.note = str(payload.get("note") or "").strip() or None; funding.recorded_by_id = actor.id
-    if funding.amount_sent > funding.approved_budget: raise ValueError("Amount released exceeds the approved amount. Revise the approval first.")
+    # Management may intentionally release below, equal to, or above the request/budget. SAGE records the exact external-release instant independently from the request date.
     from services.budget_control_service import sync_request_budget
-    sync_request_budget(request_row, actor, amount=funding.approved_budget, budget_id=payload.get("budget_id"))
-    mark_sent = str(payload.get("mark_money_sent") or "false").lower() in {"1", "true", "yes"}
-    if mark_sent and request_row.status == "approved": request_row.status, request_row.money_sent_at, request_row.money_sent_by_id = "money_sent", datetime.now(timezone.utc), actor.id; funding.funded_at = request_row.money_sent_at
-    elif funding.amount_sent > 0 and not funding.funded_at: funding.funded_at = datetime.now(timezone.utc)
-    db.session.add(funding); existing_commitment = FinancialRecord.query.filter_by(organization_id=actor.organization_id, record_type="procurement", source_entity_id=request_row.id, status="posted").first()
-    if existing_commitment: existing_commitment.amount = funding.approved_budget
-    elif mark_sent: add_financial_record(actor, "procurement", request_row.title, funding.approved_budget, request_row.department_id, "Committed approved procurement", request_row.id, commit=False)
-    description = f"{actor.display_name} updated funding for {request_row.reference}: budget {request_row.currency} {funding.approved_budget:,.2f}, amount sent {request_row.currency} {funding.amount_sent:,.2f}."; record_revision(actor, "request_funding", funding.id or request_row.id, "request_funding_updated", before, {"request_status":request_row.status,"approved_budget":funding.approved_budget,"amount_sent":funding.amount_sent,"payment_method":funding.payment_method,"payment_reference":funding.payment_reference}, description); record_activity(app, actor, "request_funding_updated", "Request budget / funding updated", description, "request", request_row.id, {"reference": request_row.reference, "approved_budget": float(funding.approved_budget), "amount_sent": float(funding.amount_sent), "payment_reference": funding.payment_reference}, notify_owner=False, level="success")
-    if request_row.requester: notify_user(app, request_row.requester, "Request funding updated", f"{request_row.reference}: approved budget {request_row.currency} {funding.approved_budget:,.2f}; amount sent {request_row.currency} {funding.amount_sent:,.2f}.", "success", "request", request_row.id, email=True)
+    sync_request_budget(request_row, actor, amount=funding.approved_budget, budget_id=payload.get("budget_id")); now = datetime.now(timezone.utc); release_now = funding.amount_sent > 0
+    release_at = parse_client_datetime(payload.get("funded_at"), funding.funded_at or request_row.money_sent_at or now) if release_now else funding.funded_at
+    if release_now and release_at > now + timedelta(minutes=5): raise ValueError("Money release date/time cannot be in the future. Record it when the money has actually been sent.")
+    if release_now:
+        if request_row.status == "approved": request_row.status = "money_sent"
+        request_row.money_sent_at, request_row.money_sent_by_id, funding.funded_at = release_at, actor.id, release_at
+    db.session.add(funding); db.session.flush(); sync_request_release_finance(actor, request_row); detail = request_balance_breakdown(request_row); sent, actual, balance = detail["owner_sent"], detail["actual"], detail["balance"]; balance_label = "balance" if balance >= 0 else "shortfall"; release_variance = sent - Decimal(request_row.estimated_total or 0)
+    release_stamp = funding.funded_at.isoformat() if funding.funded_at else None; description = f"{actor.display_name} updated funding for {request_row.reference}: requested {request_row.currency} {request_row.estimated_total:,.2f}; approved budget {request_row.currency} {funding.approved_budget:,.2f}; owner released {request_row.currency} {sent:,.2f}; release time {release_stamp or 'not released'}; inherited balance {request_row.currency} {detail['inherited']:,.2f}; actual purchase {request_row.currency} {actual:,.2f}; {balance_label} {request_row.currency} {abs(balance):,.2f}."; record_revision(actor, "request_funding", funding.id, "request_funding_updated", before, {"request_status":request_row.status,"approved_budget":funding.approved_budget,"amount_sent":funding.amount_sent,"payment_method":funding.payment_method,"payment_reference":funding.payment_reference,"funded_at":funding.funded_at,"balance_applied":detail["inherited"],"actual_purchase":actual,"balance":balance,"release_variance":release_variance}, description); record_activity(app, actor, "request_funding_updated", "Request funds released" if release_now else "Request budget updated", description, "request", request_row.id, {"reference": request_row.reference, "requested": float(request_row.estimated_total or 0), "approved_budget": float(funding.approved_budget), "amount_sent": float(sent), "funded_at":release_stamp, "balance_applied":float(detail["inherited"]), "actual_purchase": float(actual), "balance": float(balance), "release_variance":float(release_variance), "payment_reference": funding.payment_reference}, notify_owner=False, level="success")
+    team_title = "Money released for request" if release_now else "Request budget updated"; team_message = f"{request_row.reference} · {request_row.title}: management {'released' if release_now else 'budgeted'} {request_row.currency} {sent if release_now else funding.approved_budget:,.2f}. Existing balance applied {request_row.currency} {detail['inherited']:,.2f}; current purchase {request_row.currency} {actual:,.2f}; {balance_label} {request_row.currency} {abs(balance):,.2f}."
+    notify_request_team(app, actor, request_row, team_title, team_message, "success" if release_now else "info", "request", request_row.id, requester_email=True, include_actor=False)
+    notify_user(app, actor, "Funding record saved" if release_now else "Budget record saved", f"{request_row.reference} · {request_row.title}: {request_row.currency} {sent:,.2f} released. SAGE posted the money-out record and updated the request balance.", "success", "request", request_row.id, email=False)
     db.session.commit(); return funding
 
 
@@ -157,12 +273,13 @@ def save_fulfillment(app, user, request_row, form, receipt_file=None, item_image
         record_as = (form.get("record_as") or "stock").strip().lower(); record_as = record_as if record_as in {"stock", "asset"} else "stock"
         if record_as == "asset": post_fulfillment_to_assets(user, request_row, fulfillment, form)
         else: post_fulfillment_to_inventory(user, request_row, fulfillment, form)
-        if fulfillment.actual_total > 0: add_financial_record(user, "expense", request_row.title, fulfillment.actual_total, request_row.department_id, "Actual procurement expenditure", fulfillment.id, commit=False)
         from services.budget_control_service import sync_request_budget
-        sync_request_budget(request_row, user, actual=fulfillment.actual_total)
-        funding = request_row.funding; budget = Decimal(funding.approved_budget or request_row.estimated_total) if funding else Decimal(request_row.estimated_total or 0); variance = budget - Decimal(fulfillment.actual_total or 0); source_label = user.display_name if fulfillment.source_type == "self_purchase" else (fulfillment.supplied_by or "another staff/person")
-        description = f"{user.display_name} submitted Stage 2 for {request_row.reference}: actual {user.organization.currency} {fulfillment.actual_total:,.2f}, budget {user.organization.currency} {budget:,.2f}, variance {user.organization.currency} {variance:,.2f}; source {source_label}; {len(line_rows)} line item(s); receipt attached{' and item image attached' if item_image else ''}."
-        record_activity(app, user, "acquisition_submitted", "Acquisition log submitted", description, "fulfillment", fulfillment.id, {"request": request_row.reference, "actual_total": float(fulfillment.actual_total), "budget": float(budget), "variance": float(variance), "receipt": existing_receipt.original_name if existing_receipt else None, "item_image": item_image.original_name if item_image else None, "record_as": record_as}, notify_owner=True, email_owner=True, level="success")
+        sync_request_budget(request_row, user, actual=fulfillment.actual_total); sync_request_release_finance(user, request_row)
+        funding = request_row.funding; budget = Decimal(funding.approved_budget or request_row.estimated_total) if funding else Decimal(request_row.estimated_total or 0); detail = request_balance_breakdown(request_row); sent, balance = detail["owner_sent"], detail["balance"]; variance = budget - Decimal(fulfillment.actual_total or 0); source_label = user.display_name if fulfillment.source_type == "self_purchase" else (fulfillment.supplied_by or "another staff/person"); balance_label = "balance left" if balance >= 0 else "funding shortfall"
+        description = f"{user.display_name} submitted Stage 2 for {request_row.reference}: owner released {user.organization.currency} {sent:,.2f}, inherited balance {user.organization.currency} {detail['inherited']:,.2f}, actual purchase {user.organization.currency} {fulfillment.actual_total:,.2f}, {balance_label} {user.organization.currency} {abs(balance):,.2f}, approved budget {user.organization.currency} {budget:,.2f}; source {source_label}; {len(line_rows)} line item(s); receipt attached{' and item image attached' if item_image else ''}."
+        record_activity(app, user, "acquisition_submitted", "Acquisition log submitted", description, "fulfillment", fulfillment.id, {"request": request_row.reference, "actual_total": float(fulfillment.actual_total), "money_sent": float(sent), "balance_applied":float(detail["inherited"]), "funds_available":float(detail["available_before_purchase"]), "balance": float(balance), "budget": float(budget), "variance": float(variance), "receipt": existing_receipt.original_name if existing_receipt else None, "item_image": item_image.original_name if item_image else None, "record_as": record_as}, notify_owner=True, email_owner=True, level="success")
+        notify_request_team(app, user, request_row, "Purchase evidence recorded", f"{request_row.reference}: actual purchase {request_row.currency} {fulfillment.actual_total:,.2f}; {balance_label} {request_row.currency} {abs(balance):,.2f}. Receipt evidence has been submitted.", "success", "fulfillment", fulfillment.id, requester_email=True, include_actor=False)
+        notify_user(app, user, "Acquisition submitted", f"{request_row.reference}: {request_row.currency} {fulfillment.actual_total:,.2f} recorded; {balance_label} {request_row.currency} {abs(balance):,.2f}. Evidence is locked for management review.", "success", "fulfillment", fulfillment.id, email=False)
     else:
         description = f"{user.display_name} saved a Stage 2 draft for {request_row.reference}." + (f" Receipt uploaded: {receipt.original_name}." if receipt else "") + (f" Item image uploaded: {item_image.original_name}." if item_image else "")
         record_activity(app, user, "acquisition_draft_saved", "Acquisition draft saved", description, "fulfillment", fulfillment.id, {"request": request_row.reference, "actual_total": float(fulfillment.actual_total), "receipt": receipt.original_name if receipt else None, "item_image": item_image.original_name if item_image else None}, notify_owner=True, email_owner=bool(receipt), level="info")
@@ -272,7 +389,7 @@ def finance_summary(organization_id, department_id=None):
     query = db.session.query(FinancialRecord.record_type, func.coalesce(func.sum(FinancialRecord.amount), 0)).filter(FinancialRecord.organization_id == organization_id, FinancialRecord.status == "posted")
     if department_id: query = query.filter(FinancialRecord.department_id == department_id)
     rows = query.group_by(FinancialRecord.record_type).all(); values = {kind: float(total or 0) for kind, total in rows}
-    income = values.get("income", 0) + values.get("revenue", 0); expenses = values.get("expense", 0) + values.get("expenditure", 0) + values.get("operating_cost", 0) + values.get("payroll", 0) + values.get("tax", 0); values.update({"income_total": income, "expense_total": expenses, "net": income - expenses})
+    income = values.get("income", 0) + values.get("revenue", 0); gross_expenses = values.get("expense", 0) + values.get("expenditure", 0) + values.get("operating_cost", 0) + values.get("payroll", 0) + values.get("tax", 0); recoveries = values.get("expense_recovery", 0); expenses = gross_expenses - recoveries; values.update({"income_total": income, "gross_expense_total": gross_expenses, "expense_recovery_total": recoveries, "expense_total": expenses, "net": income - expenses})
     return values
 
 
@@ -285,6 +402,7 @@ def financial_month_series(organization_id, department_id=None):
         index = max(0, min(11, (row.occurred_at.month if row.occurred_at else 1) - 1)); amount = float(row.amount or 0)
         if row.record_type in {"income", "revenue"}: income[index] += amount
         if row.record_type in {"expense", "expenditure", "operating_cost", "payroll", "tax"}: expenses[index] += amount
+        if row.record_type == "expense_recovery": expenses[index] -= amount
     return {"labels": ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"], "income": income, "expenses": expenses, "net": [income[i] - expenses[i] for i in range(12)]}
 
 

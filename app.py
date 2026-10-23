@@ -18,6 +18,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy import func, or_
 
 from core.config import Config
+from core.datetime_utils import as_utc
 from packages.database import db, init_database
 from packages.security import init_security, roles_required
 from services.access_control import allowed_pages, can_access_page, filter_navigation, is_owner_admin
@@ -29,18 +30,18 @@ from services.department_operations import acknowledge_staff_report, create_depa
 from services.finance_service import create_budget, create_finance_account, create_forecast, create_payable, create_payroll, create_receivable, create_reconciliation, create_tax, finance_control_context, post_ledger_entry, settle_payable, settle_receivable
 from services.demo_data import NAV_ITEMS, PAGE_TITLES
 from services.notification_service import notification_route, notify_user, record_activity
-from services.operations_service import FINANCE_TYPES, add_financial_record, analytics_context, create_request, decide_request, finance_summary, move_asset, move_stock, next_asset_tag, owner_dashboard_context, save_fulfillment, save_request_funding, scoped_department, verify_fulfillment
+from services.operations_service import FINANCE_TYPES, add_financial_record, analytics_context, balance_sources_for_user, create_request, decide_request, finance_summary, move_asset, move_stock, next_asset_tag, owner_dashboard_context, request_balance_breakdown, reusable_balance_for_user, return_request_balance, save_fulfillment, save_request_funding, scoped_department, verify_fulfillment
 from services.organization_catalog import BUSINESS_TYPES, INDIVIDUAL_BUSINESS_TYPES
 from services.item_catalog import department_catalog, organization_catalog_summary
 from services.platform_service import get_control, organization_rows, permanent_delete_organization, platform_summary, record_platform_admin, update_control
 from services.reporting_service import management_export_rows, reporting_context
 from services.export_service import build_report_export
-from services.management_service import assign_department_to_branch, audit_revision_context, branch_comparison_context, can_actor_approve_request, create_approval_rule, create_branch, executive_dashboard_context, management_anomaly_context, management_settings_context, procurement_management_context
+from services.management_service import assign_department_to_branch, audit_revision_context, audit_timeline_context, branch_comparison_context, can_actor_approve_request, create_approval_rule, create_branch, executive_dashboard_context, management_anomaly_context, management_settings_context, procurement_management_context
 from services.briefing_service import build_daily_briefing
 from services.push_service import disable_subscription, public_push_config, push_enabled, save_subscription
 from services.production_service import apply_retention_policy, apply_security_headers, health_snapshot, install_proxy_support, production_warnings
 from services.storage_service import attachment_response
-from services.workspace_service import individual_dashboard_context, request_management_context, workspace_profile_context
+from services.workspace_service import individual_dashboard_context, request_funds_context, request_management_context, workspace_profile_context
 from services.owner_control_service import scoped_finance_summary
 from services.income_service import income_export_rows, income_workspace_context
 from services.expense_service import expense_export_rows, expense_workspace_context
@@ -57,6 +58,10 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR, TEMPLATE_DIR = BASE_DIR / "static", BASE_DIR / "templates"
 app = Flask(__name__, static_folder=str(STATIC_DIR), template_folder=str(TEMPLATE_DIR)); app.config.from_object(Config)
 app.secret_key = os.getenv("SECRET_KEY", app.config.get("SECRET_KEY", "sage-development-secret")); install_proxy_support(app)
+
+# Browser-facing timestamps carry an explicit UTC offset so JavaScript can render the correct local instant on every device.
+def sage_iso(value): return as_utc(value).isoformat() if value else ""
+app.jinja_env.filters["sage_iso"] = sage_iso
 
 # ==========================================================
 # SAGE STRICT TEMPLATE / STATIC CACHE PROTECTION
@@ -152,10 +157,12 @@ def rate_limit(rule): return limiter.limit(rule) if limiter else (lambda view: v
 # ==========================================================
 
 database_label = init_database(app); init_security(app)
-from models import ActivityEvent, AssetItem, AssetMovement, Attachment, BudgetAllocation, CatalogItem, Department, DepartmentOperation, FinanceAccount, FinanceForecast, FinanceLedgerEntry, FinancePayable, FinanceReceivable, FinanceReconciliation, FinancialRecord, FulfillmentLine, InventoryItem, Notification, Organization, OrganizationWorkspace, PayrollEntry, PlatformAdminAudit, PlatformOwnerControl, PurchaseRequest, RequestFunding, StaffInvitation, StaffReport, StockMovement, TaxEntry, User, PushSubscription, Supplier, BranchLocation, BranchDepartment, ApprovalRule  # noqa: E402
+from models import ActivityEvent, AssetItem, AssetMovement, Attachment, BudgetAllocation, CatalogItem, Department, DepartmentOperation, FinanceAccount, FinanceForecast, FinanceLedgerEntry, FinancePayable, FinanceReceivable, FinanceReconciliation, FinancialRecord, FulfillmentLine, InventoryItem, Notification, Organization, OrganizationWorkspace, PayrollEntry, PlatformAdminAudit, PlatformOwnerControl, PurchaseRequest, RequestFunding, RequestBalanceTransaction, StaffInvitation, StaffReport, StockMovement, TaxEntry, User, PushSubscription, Supplier, BranchLocation, BranchDepartment, ApprovalRule  # noqa: E402
 
 with app.app_context():
-    Path(app.config["STORAGE_DIR"]).mkdir(parents=True, exist_ok=True); db.create_all() if app.config.get("AUTO_CREATE_SCHEMA", True) else None; PlatformOwnerControl.query.filter(PlatformOwnerControl.status.in_(["restricted", "deleted"])).update({"status": "disabled"}, synchronize_session=False); db.session.commit(); print(f"[SAGE] Database backend: {app.extensions.get('vision_database_label', database_label)}")
+    Path(app.config["STORAGE_DIR"]).mkdir(parents=True, exist_ok=True); db.create_all() if app.config.get("AUTO_CREATE_SCHEMA", True) else None
+    # Request-balance ledger is a new standalone table. Create it safely on upgrade even where production disables blanket db.create_all(); existing tables are never altered here.
+    RequestBalanceTransaction.__table__.create(bind=db.engine, checkfirst=True); PlatformOwnerControl.query.filter(PlatformOwnerControl.status.in_(["restricted", "deleted"])).update({"status": "disabled"}, synchronize_session=False); db.session.commit(); print(f"[SAGE] Database backend: {app.extensions.get('vision_database_label', database_label)}")
     for warning in production_warnings(app): app.logger.warning("PRODUCTION CHECK: %s", warning)
 
 install_audit_tracking(app)
@@ -257,7 +264,7 @@ def page_context(page):
     all_staff = User.query.filter_by(organization_id=current_user.organization_id).order_by(User.created_at.desc()).all() if owner_admin else [current_user]
     staff_users = [user for user in all_staff if user.status != "deleted"]; archived_staff_users = [user for user in all_staff if user.status == "deleted"]
     staff_stats = {"total": len(all_staff), "active": sum(1 for user in all_staff if user.status == "active"), "suspended": sum(1 for user in all_staff if user.status == "suspended"), "deleted": len(archived_staff_users), "departments": len({user.department_id for user in all_staff if user.department_id})}
-    live_requests, inventory_items, asset_items, activity_events = _requests_for_user(current_user, None if page == "requests" else 100), _inventory_for_user(current_user), _assets_for_user(current_user), _activity_for_user(current_user)
+    live_requests, inventory_items, asset_items, activity_events = _requests_for_user(current_user, None if page == "requests" else 100), _inventory_for_user(current_user), _assets_for_user(current_user), _activity_for_user(current_user, 600 if page == "audit" else 100)
     count_query = db.session.query(PurchaseRequest.status, func.count(PurchaseRequest.id)).filter(PurchaseRequest.organization_id == current_user.organization_id)
     if current_user.role not in {"owner", "admin", "finance", "procurement"}:
         count_query = count_query.filter(PurchaseRequest.department_id == current_user.department_id) if current_user.department_id else count_query.filter(PurchaseRequest.requester_id == current_user.id)
@@ -277,7 +284,7 @@ def page_context(page):
     operation_templates = department_operations_profile(department_name) if department_name else []
     if "operations" in permitted_pages and not any(tool.get("route") == "operations" for tool in workspace_profile_data.get("tools", [])): workspace_profile_data.setdefault("tools", []).insert(0, {"label":"Department Operations","detail":"Record job-specific work, usage, incidents, movements and accountable activity.","icon":workspace_profile_data.get("icon","briefcase"),"route":"operations"})
     if "reports" in permitted_pages and not any(tool.get("route") == "reports" for tool in workspace_profile_data.get("tools", [])): workspace_profile_data.setdefault("tools", []).append({"label":"My Activity Reports","detail":"Generate daily, weekly, monthly or quarterly reports from your real SAGE activity.","icon":"reports","route":"reports"})
-    sage_workspace = workspace_profile_context(current_user.organization); individual_business = individual_dashboard_context(current_user) if current_user.role == "owner" and sage_workspace["is_individual"] and page == "dashboard" else None; request_management = request_management_context(current_user, live_requests) if owner_admin and page in {"dashboard", "requests"} else None; executive_management = executive_dashboard_context(current_user) if owner_admin and page == "dashboard" else None
+    sage_workspace = workspace_profile_context(current_user.organization); individual_business = individual_dashboard_context(current_user) if current_user.role == "owner" and sage_workspace["is_individual"] and page == "dashboard" else None; request_management = request_management_context(current_user, live_requests) if owner_admin and page in {"dashboard", "requests"} else None; request_funds = request_funds_context(current_user, _requests_for_user(current_user, None)) if page in {"dashboard", "requests", "fulfillment"} else None; request_balance_map = {row.id:{key:float(value) for key,value in request_balance_breakdown(row).items()} for row in live_requests}; executive_management = executive_dashboard_context(current_user) if owner_admin and page == "dashboard" else None
     if executive_management:
         executive_management["attention"].extend(attention_additions(current_user))
         executive_management["attention"].sort(key=lambda item:item["rank"], reverse=True)
@@ -287,7 +294,7 @@ def page_context(page):
     if request.headers.get("X-Sage-Partial") != "1" and briefing_token and briefing_ack != briefing_token:
         try: boot_briefing = {"show": True, "briefing_token": briefing_token, **build_daily_briefing(current_user)}
         except Exception as exc: app.logger.warning("SAGE Pulse bootstrap skipped: %s", exc)
-    context = {"page": page, "page_title": title, "page_subtitle": subtitle, "nav_items": filter_navigation(NAV_ITEMS, current_user), "departments": departments, "organization_departments": organization_departments, "asset_custodians": User.query.filter_by(organization_id=current_user.organization_id, status="active").order_by(User.first_name.asc(), User.last_name.asc()).all(), "staff_users": staff_users, "archived_staff_users": archived_staff_users, "staff_stats": staff_stats, "owner_admin": owner_admin, "business_types": BUSINESS_TYPES, "live_requests": live_requests, "request_counts": request_counts, "inventory_items": inventory_items, "asset_items": asset_items, "asset_value": sum(item.total_value for item in asset_items), "asset_movements": _asset_movements_for_user(current_user), "stock_movements": _stock_movements_for_user(current_user), "granted_requests": [row for row in live_requests if row.status in {"approved", "money_sent", "fulfilled", "verified"}], "activity_events": activity_events, "fulfillment_attachments": fulfillment_attachments, "fulfillment_evidence": fulfillment_evidence, "finance_summary": finance_summary(current_user.organization_id), "catalog_items": custom_catalog_items, "request_catalog_items": request_catalog_items, "department_catalog": department_catalog_info, "organization_catalog": organization_catalog_summary(current_user.organization.business_type), "notifications": Notification.query.filter_by(organization_id=current_user.organization_id, user_id=current_user.id).order_by(Notification.created_at.desc()).limit(12).all(), "unread_notifications": Notification.query.filter_by(organization_id=current_user.organization_id, user_id=current_user.id, is_read=False).count(), "workspace_profile": workspace_profile_data, "role_focus": role_focus(current_user.position or current_user.role_label, department_name), "finance_types": sorted(FINANCE_TYPES), "operation_templates": operation_templates, "department_operations": department_operations, "staff_reports": staff_reports, "today_report_metrics": today_report_metrics, "week_report_metrics": week_report_metrics, "month_report_metrics": month_report_metrics, "quarter_report_metrics": quarter_report_metrics, "finance_control": finance_control_context(current_user) if page in {"finance", "income", "expenses"} and current_user.role in {"owner", "admin", "finance"} else None, "income_workspace": income_workspace_context(current_user) if page == "income" or (page == "dashboard" and owner_admin) else None, "expense_workspace": expense_workspace_context(current_user) if page == "expenses" else None, "performance_targets": performance_target_context(current_user) if page in {"income", "dashboard"} and owner_admin else None, "reporting": reporting_context(current_user) if page == "reports" else None, "financial_intelligence": reporting_context(current_user) if page in {"dashboard", "requests", "fulfillment"} else None, "push_enabled": push_enabled(app), "sage_workspace": sage_workspace, "workspace_mode": sage_workspace["mode"], "individual_business": individual_business, "request_management": request_management, "executive_management": executive_management, "procurement_management": procurement_management_context(current_user) if page == "procurement" and owner_admin else None, "management_settings": management_settings_context(current_user) if page == "settings" and owner_admin else None, "branch_management": branch_comparison_context(current_user) if page == "reports" and owner_admin else None, "audit_revisions": audit_revision_context(current_user) if page == "audit" and owner_admin else None, "management_anomalies": management_anomaly_context(current_user) if page in {"analytics", "audit"} and owner_admin else None, "boot_briefing": boot_briefing}
+    context = {"page": page, "page_title": title, "page_subtitle": subtitle, "nav_items": filter_navigation(NAV_ITEMS, current_user), "departments": departments, "organization_departments": organization_departments, "asset_custodians": User.query.filter_by(organization_id=current_user.organization_id, status="active").order_by(User.first_name.asc(), User.last_name.asc()).all(), "staff_users": staff_users, "archived_staff_users": archived_staff_users, "staff_stats": staff_stats, "owner_admin": owner_admin, "business_types": BUSINESS_TYPES, "live_requests": live_requests, "request_counts": request_counts, "inventory_items": inventory_items, "asset_items": asset_items, "asset_value": sum(item.total_value for item in asset_items), "asset_movements": _asset_movements_for_user(current_user), "stock_movements": _stock_movements_for_user(current_user), "granted_requests": [row for row in live_requests if row.status in {"approved", "money_sent", "fulfilled", "verified"}], "activity_events": activity_events, "fulfillment_attachments": fulfillment_attachments, "fulfillment_evidence": fulfillment_evidence, "finance_summary": finance_summary(current_user.organization_id), "catalog_items": custom_catalog_items, "request_catalog_items": request_catalog_items, "department_catalog": department_catalog_info, "organization_catalog": organization_catalog_summary(current_user.organization.business_type), "notifications": Notification.query.filter_by(organization_id=current_user.organization_id, user_id=current_user.id).order_by(Notification.created_at.desc()).limit(12).all(), "unread_notifications": Notification.query.filter_by(organization_id=current_user.organization_id, user_id=current_user.id, is_read=False).count(), "workspace_profile": workspace_profile_data, "role_focus": role_focus(current_user.position or current_user.role_label, department_name), "finance_types": sorted(FINANCE_TYPES), "operation_templates": operation_templates, "department_operations": department_operations, "staff_reports": staff_reports, "today_report_metrics": today_report_metrics, "week_report_metrics": week_report_metrics, "month_report_metrics": month_report_metrics, "quarter_report_metrics": quarter_report_metrics, "finance_control": finance_control_context(current_user) if page in {"finance", "income", "expenses"} and current_user.role in {"owner", "admin", "finance"} else None, "income_workspace": income_workspace_context(current_user) if page == "income" or (page == "dashboard" and owner_admin) else None, "expense_workspace": expense_workspace_context(current_user) if page == "expenses" or (page == "dashboard" and owner_admin) else None, "request_funds": request_funds, "request_balance_map": request_balance_map, "performance_targets": performance_target_context(current_user) if page in {"income", "dashboard"} and owner_admin else None, "reporting": reporting_context(current_user) if page == "reports" else None, "financial_intelligence": reporting_context(current_user) if page in {"dashboard", "requests", "fulfillment"} else None, "push_enabled": push_enabled(app), "sage_workspace": sage_workspace, "workspace_mode": sage_workspace["mode"], "individual_business": individual_business, "request_management": request_management, "executive_management": executive_management, "procurement_management": procurement_management_context(current_user) if page == "procurement" and owner_admin else None, "management_settings": management_settings_context(current_user) if page == "settings" and owner_admin else None, "branch_management": branch_comparison_context(current_user) if page == "reports" and owner_admin else None, "audit_revisions": audit_revision_context(current_user) if page == "audit" and owner_admin else None, "audit_timeline": audit_timeline_context(current_user, activity_events) if page == "audit" else None, "management_anomalies": management_anomaly_context(current_user) if page in {"analytics", "audit"} and owner_admin else None, "boot_briefing": boot_briefing}
     context.update(owner_dashboard_context(current_user)); context.update({"analytics": analytics_context(current_user), "staff_finance": scoped_finance_summary(current_user), "approval_permissions": {row.id: can_actor_approve_request(current_user, row)[0] for row in live_requests if row.status == 'submitted'}}); return context
 
 def render_vision_page(page): return render_template("app_shell.html", **page_context(page))
@@ -484,6 +491,26 @@ def mark_daily_briefing_pending():
     # A unique token per successful sign-in makes the compact SAGE Pulse reliably appear once per login and prevents a failed first fetch from consuming the briefing.
     token = secrets.token_urlsafe(12); session["sage_daily_briefing_token"] = token; session["sage_daily_briefing_pending"] = True; session.pop("sage_daily_briefing_ack", None); return token
 
+
+def organization_logo_attachment(organization_or_id):
+    organization_id = getattr(organization_or_id, "id", organization_or_id)
+    if not organization_id: return None
+    return Attachment.query.filter_by(organization_id=str(organization_id), entity_type="organization", entity_id=str(organization_id), kind="organization_logo").order_by(Attachment.created_at.desc()).first()
+
+def organization_logo_url(organization_or_id):
+    organization_id = getattr(organization_or_id, "id", organization_or_id)
+    return url_for("organization_logo", organization_id=organization_id) if organization_logo_attachment(organization_id) else None
+
+app.jinja_env.globals["organization_logo_url"] = organization_logo_url
+
+@app.get("/organization-logo/<organization_id>")
+@login_required
+def organization_logo(organization_id):
+    if str(current_user.organization_id) != str(organization_id): abort(403)
+    attachment = organization_logo_attachment(organization_id)
+    if not attachment: abort(404)
+    return attachment_response(app, attachment)
+
 # ==========================================================
 # AUTHENTICATION API
 # ==========================================================
@@ -492,7 +519,9 @@ def mark_daily_briefing_pending():
 @rate_limit("8 per minute")
 def api_register_owner():
     try:
-        owner = register_owner(request.get_json(silent=True) or {}); login_user(owner, remember=True); session["sage_tenant_org_id"] = owner.organization_id; mark_daily_briefing_pending()
+        payload = request.get_json(silent=True) or request.form.to_dict(flat=True) or {}
+        if request.form: payload["departments"] = [item for item in request.form.getlist("departments") if str(item or "").strip()]
+        owner = register_owner(payload, logo_file=request.files.get("organization_logo")); login_user(owner, remember=True); session["sage_tenant_org_id"] = owner.organization_id; mark_daily_briefing_pending()
         return jsonify({"ok": True, "redirect": url_for("dashboard"), "organization": owner.organization.name, "name": owner.display_name})
     except (ValueError, TypeError) as error: db.session.rollback(); return json_error(error)
     except Exception: db.session.rollback(); app.logger.exception("Owner registration failed"); return json_error("Registration could not be completed. Check the database connection and try again.", 500)
@@ -708,7 +737,7 @@ def api_management_approval_rule():
 def api_requests_create():
     if current_user.role == "owner": return json_error("Organization owners do not submit requests to themselves. Use Finance, Inventory, Assets or Quick Record instead.", 403)
     try:
-        row = create_request(app, current_user, request.get_json(silent=True) or {}); return jsonify({"ok": True, "request": {"id": row.id, "reference": row.reference, "status": row.status, "amount": float(row.estimated_total)}, "message": "Request submitted." if row.status == "submitted" else "Draft request saved."})
+        row = create_request(app, current_user, request.get_json(silent=True) or {}); detail = request_balance_breakdown(row); applied = float(detail["inherited"]); owner_needed = float(detail["owner_needed"]); return jsonify({"ok": True, "request": {"id": row.id, "reference": row.reference, "status": row.status, "amount": float(row.estimated_total), "balance_applied": applied, "owner_needed": owner_needed}, "message": (f"Request submitted. {row.currency} {applied:,.2f} existing balance applied; management funding required {row.currency} {owner_needed:,.2f}." if row.status == "submitted" and applied > 0 else "Request submitted." if row.status == "submitted" else "Draft request saved.")})
     except (ValueError, TypeError) as error: db.session.rollback(); return json_error(error)
     except Exception: db.session.rollback(); app.logger.exception("Request creation failed"); return json_error("The request could not be saved.", 500)
 
@@ -725,15 +754,15 @@ def api_request_action(request_id):
 @login_required
 def api_request_fulfillment_context(request_id):
     # PHASE 8: Stage 2 context keeps requested vs actual quantities/costs, funding, staff source and evidence together.
-    row = _get_request_or_404(request_id); fulfillment = row.fulfillment; evidence = Attachment.query.filter_by(organization_id=current_user.organization_id, entity_type="fulfillment", entity_id=fulfillment.id).order_by(Attachment.created_at.desc()).all() if fulfillment else []; line_map = {line.request_item_id: line for line in (fulfillment.lines if fulfillment else [])}; funding = row.funding
-    return jsonify({"ok": True, "request": {"id": row.id, "reference": row.reference, "title": row.title, "status": row.status, "estimated_total": float(row.estimated_total or 0), "currency": row.currency, "requester": row.requester.display_name if row.requester else "Unknown", "department": row.department.name if row.department else ""}, "funding": {"approved_budget": float(funding.approved_budget or 0), "amount_sent": float(funding.amount_sent or 0), "payment_method": funding.payment_method or "", "payment_reference": funding.payment_reference or "", "note": funding.note or ""} if funding else None, "items": [{"id": item.id, "name": item.item_name, "category": item.category or "", "unit": item.unit, "requested_quantity": float(item.quantity or 0), "requested_unit_cost": float(item.unit_cost or 0), "requested_total": float(item.estimated_total or 0), "actual_quantity": float(line_map[item.id].actual_quantity or 0) if item.id in line_map else float(item.quantity or 0), "actual_unit_cost": float(line_map[item.id].actual_unit_cost or 0) if item.id in line_map else float(item.unit_cost or 0), "delivery_at": line_map[item.id].delivered_at.isoformat() if item.id in line_map and line_map[item.id].delivered_at else None, "note": (line_map[item.id].notes or "") if item.id in line_map else ""} for item in row.items], "fulfillment": {"source_type": fulfillment.source_type, "supplied_by": fulfillment.supplied_by or "", "supplier_name": fulfillment.supplier_name or "", "actual_total": float(fulfillment.actual_total or 0), "purchase_date": fulfillment.purchase_date.isoformat() if fulfillment.purchase_date else None, "notes": fulfillment.notes or "", "draft": fulfillment.is_draft, "confirmed": bool(fulfillment.confirmed_at), "recorded_by": fulfillment.recorded_by.display_name if fulfillment.recorded_by else ""} if fulfillment else None, "evidence": [{"id": item.id, "kind": item.kind, "name": item.original_name, "final": item.is_final} for item in evidence]})
+    row = _get_request_or_404(request_id); fulfillment = row.fulfillment; evidence = Attachment.query.filter_by(organization_id=current_user.organization_id, entity_type="fulfillment", entity_id=fulfillment.id).order_by(Attachment.created_at.desc()).all() if fulfillment else []; line_map = {line.request_item_id: line for line in (fulfillment.lines if fulfillment else [])}; funding = row.funding; detail = request_balance_breakdown(row); sent, actual, balance = float(detail["owner_sent"]), float(detail["actual"]), float(detail["balance"]); inherited = float(detail["inherited"]); available_funds = float(detail["available_before_purchase"]); returned = float(detail["returned"]); allocated_out = float(detail["allocated_out"])
+    return jsonify({"ok": True, "request": {"id": row.id, "reference": row.reference, "title": row.title, "status": row.status, "estimated_total": float(row.estimated_total or 0), "currency": row.currency, "requester": row.requester.display_name if row.requester else "Unknown", "department": row.department.name if row.department else ""}, "funding": {"approved_budget": float(funding.approved_budget or 0) if funding else float(row.estimated_total or 0), "amount_sent": sent, "inherited_balance": inherited, "funds_available": available_funds, "actual_spent": actual, "balance": balance, "returned": returned, "allocated_out": allocated_out, "reusable": float(detail["reusable"]), "budget_remaining": (float(funding.approved_budget or 0) - sent) if funding else float(row.estimated_total or 0), "funded_at": funding.funded_at.isoformat() if funding and funding.funded_at else None, "payment_method": funding.payment_method or "" if funding else "", "payment_reference": funding.payment_reference or "" if funding else "", "note": funding.note or "" if funding else ""}, "items": [{"id": item.id, "name": item.item_name, "category": item.category or "", "unit": item.unit, "requested_quantity": float(item.quantity or 0), "requested_unit_cost": float(item.unit_cost or 0), "requested_total": float(item.estimated_total or 0), "actual_quantity": float(line_map[item.id].actual_quantity or 0) if item.id in line_map else float(item.quantity or 0), "actual_unit_cost": float(line_map[item.id].actual_unit_cost or 0) if item.id in line_map else float(item.unit_cost or 0), "delivery_at": line_map[item.id].delivered_at.isoformat() if item.id in line_map and line_map[item.id].delivered_at else None, "note": (line_map[item.id].notes or "") if item.id in line_map else ""} for item in row.items], "fulfillment": {"source_type": fulfillment.source_type, "supplied_by": fulfillment.supplied_by or "", "supplier_name": fulfillment.supplier_name or "", "actual_total": float(fulfillment.actual_total or 0), "purchase_date": fulfillment.purchase_date.isoformat() if fulfillment.purchase_date else None, "notes": fulfillment.notes or "", "draft": fulfillment.is_draft, "confirmed": bool(fulfillment.confirmed_at), "recorded_by": fulfillment.recorded_by.display_name if fulfillment.recorded_by else ""} if fulfillment else None, "evidence": [{"id": item.id, "kind": item.kind, "name": item.original_name, "final": item.is_final} for item in evidence]})
 
 @app.post("/api/requests/<request_id>/fulfillment")
 @login_required
 def api_request_fulfillment(request_id):
     row = _get_request_or_404(request_id)
     try:
-        fulfillment = save_fulfillment(app, current_user, row, request.form, request.files.get("receipt"), request.files.get("item_image")); return jsonify({"ok": True, "draft": fulfillment.is_draft, "confirmed": bool(fulfillment.confirmed_at), "message": "Stage 2 acquisition submitted, evidence locked and records posted." if fulfillment.confirmed_at else "Stage 2 acquisition draft saved."})
+        fulfillment = save_fulfillment(app, current_user, row, request.form, request.files.get("receipt"), request.files.get("item_image")); detail = request_balance_breakdown(row); sent, inherited, actual, balance = float(detail["owner_sent"]), float(detail["inherited"]), float(detail["actual"]), float(detail["balance"]); return jsonify({"ok": True, "draft": fulfillment.is_draft, "confirmed": bool(fulfillment.confirmed_at), "money_sent": sent, "balance_applied": inherited, "funds_available": sent + inherited, "actual_spent": actual, "balance": balance, "reusable_balance": float(detail["reusable"]), "message": (f"Stage 2 submitted: {row.currency} {actual:,.2f} purchased; {'balance left' if balance >= 0 else 'funding shortfall'} {row.currency} {abs(balance):,.2f}. Evidence locked and accountability balance updated." if fulfillment.confirmed_at else "Stage 2 acquisition draft saved.")})
     except PermissionError as error: db.session.rollback(); return json_error(error, 403)
     except (ValueError, TypeError) as error: db.session.rollback(); return json_error(error)
     except Exception: db.session.rollback(); app.logger.exception("Purchase fulfillment failed"); return json_error("Acquisition details could not be saved.", 500)
@@ -748,15 +777,32 @@ def api_request_verify(request_id):
     except ValueError as error: db.session.rollback(); return json_error(error)
     except Exception: db.session.rollback(); app.logger.exception("Acquisition verification failed"); return json_error("The acquisition could not be verified.", 500)
 
+@app.get("/api/request-balances/me")
+@login_required
+def api_my_request_balances():
+    if current_user.role in {"owner", "admin", "finance"}: return jsonify({"ok":True,"currency":current_user.organization.currency,"reusable_balance":0,"sources":[]})
+    sources = balance_sources_for_user(current_user); total = sum(float(item["available"]) for item in sources); return jsonify({"ok":True,"currency":current_user.organization.currency,"reusable_balance":total,"sources":[{"request_id":item["request"].id,"reference":item["request"].reference,"title":item["request"].title,"department":item["request"].department.name if item["request"].department else "Unassigned","available":float(item["available"]),"actual":float(item["detail"]["actual"]),"owner_sent":float(item["detail"]["owner_sent"]),"inherited":float(item["detail"]["inherited"])} for item in sources]})
+
+@app.post("/api/requests/<request_id>/balance-return")
+@login_required
+def api_request_balance_return(request_id):
+    row = _get_request_or_404(request_id); payload = request.get_json(silent=True) or {}
+    try:
+        tx, detail = return_request_balance(app, current_user, row, payload.get("amount"), payload.get("note"), payload.get("payment_method"), payload.get("payment_reference")); summary = finance_summary(current_user.organization_id); return jsonify({"ok":True,"reference":tx.reference,"returned":float(tx.amount),"remaining":float(detail["reusable"]),"expense_total":summary.get("expense_total",0),"net":summary.get("net",0),"message":f"{row.currency} {tx.amount:,.2f} returned to management. Remaining reusable balance {row.currency} {detail['reusable']:,.2f}."})
+    except PermissionError as error: db.session.rollback(); return json_error(error,403)
+    except (ValueError,TypeError) as error: db.session.rollback(); return json_error(error)
+    except Exception: db.session.rollback(); app.logger.exception("Request balance return failed"); return json_error("The balance return could not be recorded.",500)
+
 @app.post("/api/requests/<request_id>/funding")
 @login_required
 def api_request_funding(request_id):
     # PHASE 8: owner/finance budget and external-money-sent register; SAGE records the decision but does not transfer money.
     row = _get_request_or_404(request_id)
     try:
-        funding = save_request_funding(app, current_user, row, request.get_json(silent=True) or {}); return jsonify({"ok": True, "message": "Budget/funding record updated.", "approved_budget": float(funding.approved_budget or 0), "amount_sent": float(funding.amount_sent or 0), "status": row.status})
+        funding = save_request_funding(app, current_user, row, request.get_json(silent=True) or {}); detail = request_balance_breakdown(row); actual, sent, inherited, balance = float(detail["actual"]), float(detail["owner_sent"]), float(detail["inherited"]), float(detail["balance"]); summary = finance_summary(current_user.organization_id); funds = request_funds_context(current_user, _requests_for_user(current_user, None)); requested = float(row.estimated_total or 0); variance = sent - requested; variance_text = f"{row.currency} {abs(variance):,.2f} {'above' if variance > 0 else 'below'} the original request" if variance else "exactly the original request"; return jsonify({"ok": True, "message": f"{row.currency} {sent:,.2f} released for {row.title} ({variance_text}). Staff funds available: {row.currency} {sent+inherited:,.2f}.", "requested_amount":requested, "approved_budget": float(funding.approved_budget or 0), "amount_sent": sent, "balance_applied":inherited, "funds_available":sent+inherited, "actual_spent": actual, "balance": balance, "status": row.status, "funded_at": funding.funded_at.isoformat() if funding.funded_at else None, "expense_total": summary.get("expense_total", 0), "net": summary.get("net", 0), "request_funds": {"total_sent": funds.get("total_sent", 0), "total_actual": funds.get("total_actual", 0), "total_returned":funds.get("total_returned",0), "available_balance": funds.get("available_balance", 0), "reusable_balance":funds.get("reusable_balance",0), "released_today": funds.get("released_today", 0)}})
     except PermissionError as error: db.session.rollback(); return json_error(error, 403)
     except (ValueError, TypeError) as error: db.session.rollback(); return json_error(error)
+    except Exception: db.session.rollback(); app.logger.exception("Request funding save failed"); return json_error("Funding could not be recorded. No partial finance update was kept.", 500)
 
 
 # ==========================================================

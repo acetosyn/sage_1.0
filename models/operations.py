@@ -98,6 +98,40 @@ class RequestFunding(db.Model):
 
 
 # ==========================================================
+# REQUEST BALANCE LEDGER
+# Tracks reusable staff/department balances created after a funded acquisition, including internal reallocation to a later request and money returned to management.
+# ==========================================================
+
+class RequestBalanceTransaction(db.Model):
+    __tablename__ = "request_balance_transactions"
+
+    id = db.Column(db.String(36), primary_key=True, default=new_id)
+    reference = db.Column(db.String(36), unique=True, nullable=False, index=True)
+    organization_id = db.Column(db.String(36), db.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    department_id = db.Column(db.String(36), db.ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
+    holder_user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    source_request_id = db.Column(db.String(36), db.ForeignKey("purchase_requests.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_request_id = db.Column(db.String(36), db.ForeignKey("purchase_requests.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    transaction_type = db.Column(db.String(24), nullable=False, index=True)  # allocation / return
+    amount = db.Column(db.Numeric(18, 2), nullable=False, default=0)
+    currency = db.Column(db.String(12), nullable=False, default="NGN")
+    payment_method = db.Column(db.String(80), nullable=True)
+    payment_reference = db.Column(db.String(120), nullable=True)
+    note = db.Column(db.String(500), nullable=True)
+    status = db.Column(db.String(24), nullable=False, default="posted", index=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=utcnow, index=True)
+
+    holder = db.relationship("User", foreign_keys=[holder_user_id])
+    created_by = db.relationship("User", foreign_keys=[created_by_id])
+    source_request = db.relationship("PurchaseRequest", foreign_keys=[source_request_id])
+    target_request = db.relationship("PurchaseRequest", foreign_keys=[target_request_id])
+
+    @property
+    def display_type(self): return self.transaction_type.replace("_", " ").title()
+
+
+# ==========================================================
 # PROCUREMENT / PURCHASE FULFILLMENT + EVIDENCE
 # ==========================================================
 

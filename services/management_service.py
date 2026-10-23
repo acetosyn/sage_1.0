@@ -177,7 +177,34 @@ def record_revision(actor, entity_type, entity_id, action, before=None, after=No
 
 def audit_revision_context(user):
     from models import AuditRevision
-    rows = AuditRevision.query.filter_by(organization_id=user.organization_id).order_by(AuditRevision.created_at.desc()).limit(150).all(); return {"rows":rows,"count":len(rows)}
+    rows = AuditRevision.query.filter_by(organization_id=user.organization_id).order_by(AuditRevision.created_at.desc()).limit(300).all(); return {"rows":rows,"count":len(rows)}
+
+
+# ==========================================================
+# TIME-AWARE AUDIT TIMELINE
+# Human categories let management filter one immutable activity stream across finance, requests, procurement, stock, assets and staff access.
+# ==========================================================
+AUDIT_CATEGORY_LABELS = {"income":"Income / Sales","expenses":"Expenses / Funding","finance":"Finance / Control","requests":"Requests / Approvals","procurement":"Purchases / Evidence","inventory":"Inventory / Stock","assets":"Assets / Equipment","staff":"Staff / Access","operations":"Operations / System"}
+
+def audit_event_category(event):
+    details = event.details_json if isinstance(event.details_json, dict) else {}; detail_type = str(details.get("type") or details.get("entry_type") or "").lower(); text = f"{event.action or ''} {event.title or ''} {event.entity_type or ''} {detail_type}".lower()
+    if any(token in text for token in ("money in", "income", "revenue", "sale", "sales", "receipt income", "service income")): return "income"
+    if any(token in text for token in ("request_funding", "funds released", "money sent", "money_sent", "expense", "expenditure", "money out", "payroll", "tax", "request_balance_returned")): return "expenses"
+    if any(token in text for token in ("fulfillment", "acquisition", "purchase", "procurement", "receipt", "supplier", "evidence")): return "procurement"
+    if any(token in text for token in ("request", "approval", "approve", "reject")): return "requests"
+    if any(token in text for token in ("inventory", "stock", "catalog")): return "inventory"
+    if any(token in text for token in ("asset", "custody", "equipment")): return "assets"
+    if any(token in text for token in ("login", "logout", "staff", "user", "invite", "password", "account")): return "staff"
+    if any(token in text for token in ("finance", "ledger", "budget", "payment", "receivable", "payable", "reconciliation", "cash", "forecast")): return "finance"
+    return "operations"
+
+def audit_timeline_context(user, events):
+    rows, counts, departments = [], {key:0 for key in AUDIT_CATEGORY_LABELS}, {}
+    for event in events:
+        category = audit_event_category(event); counts[category] += 1
+        department_name = event.department.name if event.department else "Organization-wide"
+        departments[department_name.lower()] = department_name; rows.append({"event":event,"category":category,"category_label":AUDIT_CATEGORY_LABELS[category],"department":department_name})
+    return {"rows":rows,"count":len(rows),"counts":counts,"category_labels":AUDIT_CATEGORY_LABELS,"departments":[departments[key] for key in sorted(departments)]}
 
 def management_anomaly_context(user):
     """Detect management exceptions from real SAGE records; no synthetic risk scores or demo alerts are generated."""

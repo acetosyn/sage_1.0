@@ -2,7 +2,7 @@
 # Builds one detailed, role-scoped money-out register from the existing finance ledger without duplicating transaction data.
 
 from datetime import datetime, timezone
-from models import Attachment, FinanceLedgerEntry
+from models import Attachment, FinanceLedgerEntry, PurchaseRequest
 from services.period_service import period_bounds, previous_bounds
 
 EXPENSE_TYPES = {"expense", "expenditure", "operating_cost", "payroll", "tax"}; MANAGEMENT_ROLES = {"owner", "admin", "finance"}
@@ -25,9 +25,12 @@ def _rank(mapping, limit=8): return sorted(mapping.items(), key=lambda item: ite
 def _evidence_map(user, rows):
     ids = [row.id for row in rows]; direct = Attachment.query.filter(Attachment.organization_id == user.organization_id, Attachment.entity_type == "finance_ledger", Attachment.entity_id.in_(ids)).order_by(Attachment.created_at.desc()).all() if ids else []; evidence = {}
     for item in direct: evidence.setdefault(item.entity_id, item)
+    request_ids = {row.source_entity_id for row in rows if row.id not in evidence and row.source_entity_type == "request" and row.source_entity_id}; request_rows = PurchaseRequest.query.filter(PurchaseRequest.organization_id == user.organization_id, PurchaseRequest.id.in_(list(request_ids))).all() if request_ids else []; fulfillment_to_ledger = {row.fulfillment.id: ledger.id for row in request_rows if row.fulfillment for ledger in rows if ledger.source_entity_type == "request" and ledger.source_entity_id == row.id}
+    if fulfillment_to_ledger:
+        for item in Attachment.query.filter(Attachment.organization_id == user.organization_id, Attachment.entity_type == "fulfillment", Attachment.entity_id.in_(list(fulfillment_to_ledger))).order_by(Attachment.created_at.desc()).all(): evidence.setdefault(fulfillment_to_ledger[item.entity_id], item)
     source_groups = {}
     for row in rows:
-        if row.id in evidence or not row.source_entity_type or not row.source_entity_id: continue
+        if row.id in evidence or not row.source_entity_type or not row.source_entity_id or row.source_entity_type == "request": continue
         source_groups.setdefault(row.source_entity_type, set()).add(row.source_entity_id)
     for entity_type, entity_ids in source_groups.items():
         attachments = Attachment.query.filter(Attachment.organization_id == user.organization_id, Attachment.entity_type == entity_type, Attachment.entity_id.in_(list(entity_ids))).order_by(Attachment.created_at.desc()).all()

@@ -4,8 +4,8 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#07090f">
   <title>Create workspace · SAGE</title>
   <script>
-    /* SAGE THEME PRE-PAINT: apply the saved appearance before CSS/browser paint so light/sky/sage/sand/slate never flash through dark on reload. */
-    (()=>{try{const colors={dark:'#050505',light:'#f6f7f9',sky:'#edf7ff',sage:'#f0f5f1',sand:'#f7f3eb',slate:'#111720'},saved=localStorage.getItem('sage-theme')||localStorage.getItem('vision-theme')||'dark',theme=Object.prototype.hasOwnProperty.call(colors,saved)?saved:'dark',html=document.documentElement;html.dataset.theme=theme;html.style.backgroundColor=colors[theme];html.style.colorScheme=['dark','slate'].includes(theme)?'dark':'light';const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute('content',colors[theme]);}catch(_){}})();
+    /* SAGE THEME PRE-PAINT: apply the saved appearance before CSS/browser paint so the chosen mood palette appears instantly on reload. */
+    (()=>{try{const colors={'dark':'#050505', 'light':'#f6f7f9', 'slate':'#111720', 'classic-sage-mustard':'#E8EFE2', 'warm-neutral':'#FDF8EE', 'modern-minimal':'#F3F6EF', 'deep-rich':'#243225', 'sage-blush':'#F9EFEF', 'sage-navy':'#E9EFE8', 'sage-terracotta':'#F7EEE8', 'sage-cream':'#FFFDF6', 'sage-charcoal':'#F6F7F4', 'mustard-forward':'#FFF5D6', 'sage-teal':'#E8F3F0', 'sage-lavender':'#F4F0FA', 'warm-earthy':'#FDF8EE', 'soft-airy':'#FFF9F0', 'earthy-neutral':'#F7EFE4', 'muted-luxury':'#E6E8D9'},darkThemes=['dark', 'slate', 'deep-rich'],saved=localStorage.getItem('sage-theme')||localStorage.getItem('vision-theme')||'dark',theme=Object.prototype.hasOwnProperty.call(colors,saved)?saved:'dark',html=document.documentElement;html.dataset.theme=theme;html.style.backgroundColor=colors[theme];html.style.colorScheme=darkThemes.includes(theme)?'dark':'light';const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.setAttribute('content',colors[theme]);}catch(_){}})();
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/vision.css') }}">
@@ -38,7 +38,7 @@
 
         <div class="register-steps four-step" id="registerSteps"><button type="button" class="active" data-step-nav="1"><span>1</span>Owner</button><i></i><button type="button" data-step-nav="2"><span>2</span>Workspace</button><i></i><button type="button" data-step-nav="3"><span>3</span>Business</button><i></i><button type="button" data-step-nav="4"><span>4</span><b data-final-step-label>Structure</b></button></div>
 
-        <form id="registerForm" class="auth-form multi-step-form">
+        <form id="registerForm" class="auth-form multi-step-form" enctype="multipart/form-data">
           <section class="register-step active" data-step="1">
             <div class="step-title"><strong>Owner information</strong><small>Your secure owner profile. SAGE captures timestamps and account metadata automatically.</small></div>
             <div class="form-grid three"><label>First name<input name="first_name" required autocomplete="given-name"></label><label>Middle name<input name="middle_name" autocomplete="additional-name"></label><label>Last name<input name="last_name" required autocomplete="family-name"></label></div>
@@ -61,6 +61,7 @@
           <section class="register-step" data-step="3">
             <div class="step-title"><strong data-business-step-title>Organization information</strong><small data-business-step-copy>Your business type determines SAGE's suggested departments and operational catalogue.</small></div>
             <label><span data-business-name-label>Organization / Business name</span><input name="organization_name" placeholder="e.g. Acme Holdings Ltd" required></label>
+            <div class="logo-upload-block"><div class="logo-upload-preview" id="logoUploadPreview" data-empty="true"><span class="logo-upload-badge" id="logoUploadBadge"><svg><use href="#i-building"/></svg></span><img id="logoUploadImage" alt="Business logo preview" hidden><div><strong>Logo preview</strong><small id="logoUploadMeta">Optional. Your uploaded logo will appear in the dashboard profile once registration is complete.</small></div></div><label class="logo-upload-field"><input type="file" name="organization_logo" id="organizationLogoInput" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"><span class="logo-upload-icon"><svg><use href="#i-building"/></svg></span><span><strong>Upload business logo</strong><small>Optional · PNG, JPG or WEBP · used in the sidebar and profile area of the dashboard.</small></span></label></div>
             <div class="form-grid two">
               <label class="workspace-organization-only business-picker-field" data-organization-business-type>Business / Company type<div class="business-smart-select" data-business-smart-select><input type="search" class="business-smart-search" placeholder="Search 30 organization types..." autocomplete="off" aria-label="Search organization type"><select name="business_type" id="businessType" data-business-native>{% for item in business_types %}<option value="{{ item.key }}" data-group="{{ item.group|default('Other') }}">{{ item.label }}</option>{% endfor %}</select><div class="business-smart-menu" role="listbox" hidden></div></div></label>
               <label class="workspace-individual-only business-picker-field" data-individual-business-type hidden>What kind of business do you run?<div class="business-smart-select" data-business-smart-select><input type="search" class="business-smart-search" placeholder="Search 30 entrepreneur types..." autocomplete="off" aria-label="Search individual business type"><select name="individual_business_type" id="individualBusinessType" data-business-native>{% for item in individual_business_types %}<option value="{{ item.key }}" data-group="{{ item.group|default('Other') }}">{{ item.label }}</option>{% endfor %}</select><div class="business-smart-menu" role="listbox" hidden></div></div></label>
@@ -107,7 +108,13 @@
         </div>
         <div class="launch-copy-stage"><span class="launch-kicker">SAGE IS GETTING READY</span><h2 id="launchTitle">Building your workspace</h2><p id="launchStatus">Creating secure owner access...</p><div class="launch-progress"><span></span></div><div class="launch-step-dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div></div>
       </div>
-      <div class="launch-welcome-stage" aria-hidden="true"><span class="launch-welcome-kicker">WELCOME TO</span><div class="launch-sage-word" aria-label="SAGE"><span>S</span><span class="launch-sage-a">Λ</span><span>G</span><span>E</span></div><div class="launch-ready-mark"><svg><use href="#i-sparkles"/></svg></div></div>
+      <div class="launch-welcome-stage" aria-hidden="true">
+        <div class="launch-business-mark" id="launchBusinessMark" aria-hidden="true"><img id="launchBusinessLogo" alt="" hidden><span id="launchBusinessInitials">SG</span></div>
+        <span class="launch-welcome-kicker">WELCOME</span><strong class="launch-business-name" id="launchBusinessName">YOUR BUSINESS</strong><span class="launch-to-sage">TO</span>
+        <div class="launch-sage-word" aria-label="SAGE"><span>S</span><span class="launch-sage-a">Λ</span><span>G</span><span>E</span></div>
+        <div class="launch-ready-row"><div class="launch-ready-mark"><svg><use href="#i-sparkles"/></svg></div><div class="launch-ready-copy"><strong id="launchReadyTitle">Workspace ready</strong><span id="launchReadyCopy">Everything is set for your first session.</span></div></div>
+      </div>
+      <div class="launch-handoff-stage" aria-hidden="true"><div class="launch-handoff-orb"><span class="launch-hourglass">⌛</span><i></i></div><span class="launch-handoff-kicker">READY TO BEGIN</span><strong id="launchHandoffTitle">Opening your dashboard</strong><div class="launch-handoff-pill"><span class="launch-handoff-spinner" aria-hidden="true"></span><span id="launchHandoffText">Loading your SAGE workspace...</span></div><div class="launch-handoff-track"><span></span></div></div>
     </div>
   </div>
 

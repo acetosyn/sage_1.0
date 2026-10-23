@@ -9,7 +9,7 @@ NAV_ITEMS = [
         {"page": "workspace", "label": "Department Workspace", "icon": "briefcase"}, {"page": "catalog", "label": "Department Catalogue", "icon": "inventory"}, {"page": "operations", "label": "Department Operations", "icon": "briefcase"}, {"page": "fulfillment", "label": "Acquisition Hub", "icon": "check"}, {"page": "procurement", "label": "Procurement", "icon": "cart"}, {"page": "inventory", "label": "Inventory", "icon": "inventory"}, {"page": "assets", "label": "Assets", "icon": "assets"},
     ]},
     {"section": "ORGANIZATION", "items": [
-        {"page": "departments", "label": "Departments", "icon": "building"}, {"page": "staff", "label": "Staff", "icon": "users"}, {"page": "reports", "label": "Reports", "icon": "reports"}, {"page": "audit", "label": "Live Activity & Audit", "icon": "audit"},
+        {"page": "departments", "label": "Departments", "icon": "building"}, {"page": "staff", "label": "Staff", "icon": "users"}, {"page": "reports", "label": "Reports", "icon": "reports"}, {"page": "audit", "label": "Audit Trail", "icon": "audit"},
     ]},
     {"section": "INSIGHTS", "items": [{"page": "analytics", "label": "Analytics", "icon": "analytics"}]},
     {"section": "SYSTEM", "items": [{"page": "settings", "label": "Settings", "icon": "settings"}]},
@@ -32,7 +32,7 @@ PAGE_TITLES = {
     "departments": ("Departments", "Create and manage every department, unit, branch or special team."),
     "staff": ("Staff", "Manage people, roles, departments and accountability."),
     "reports": ("Reports", "Management-ready finance, procurement, inventory, department and audit reports."),
-    "audit": ("Live Activity & Audit", "Owner-visible timeline of staff actions, evidence, approvals and changes."),
+    "audit": ("Audit Trail", "Time-aware organization history across finance, requests, purchases, inventory, assets, staff access and retained changes."),
     "settings": ("Settings", "Configure organization profile, approvals, roles and notification preferences."),
 }
 

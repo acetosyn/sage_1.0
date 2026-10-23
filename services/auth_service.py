@@ -3,10 +3,12 @@
 
 import re
 from datetime import date, datetime, timezone
+from flask import current_app
 from sqlalchemy import func
 from packages.database import db
 from models import AuditLog, Department, Organization, OrganizationWorkspace, PlatformOwnerControl, StaffInvitation, User
 from services.organization_catalog import BUSINESS_TYPE_MAP, canonical_business_for_individual, suggested_departments
+from services.storage_service import save_attachment
 
 
 # ==========================================================
@@ -39,7 +41,13 @@ def create_audit(organization_id, user_id, action, description):
 # OWNER REGISTRATION
 # ==========================================================
 
-def register_owner(payload):
+def clean_logo_upload(file_storage):
+    if not file_storage or not getattr(file_storage, "filename", None): return None
+    filename, mime = str(file_storage.filename or "").lower(), str(getattr(file_storage, "mimetype", "") or "").lower()
+    if not filename.endswith((".png", ".jpg", ".jpeg", ".webp")) or (mime and mime not in {"image/png", "image/jpeg", "image/webp"}): raise ValueError("Business logo must be a PNG, JPG or WEBP image.")
+    return file_storage
+
+def register_owner(payload, logo_file=None):
     email = clean_email(payload.get("email"))
     if not email or User.query.filter(func.lower(User.email) == email).first(): raise ValueError("That email address is already registered.")
     if len(payload.get("password") or "") < 8: raise ValueError("Password must contain at least 8 characters.")
@@ -66,7 +74,9 @@ def register_owner(payload):
 
     owner = User(organization_id=organization.id, department_id=first_department.id if workspace_mode == "individual" and first_department else None, first_name=(payload.get("first_name") or "").strip(), middle_name=(payload.get("middle_name") or "").strip() or None, last_name=(payload.get("last_name") or "").strip(), sex=(payload.get("sex") or "").strip() or None, date_of_birth=parse_date(payload.get("date_of_birth")), phone=(payload.get("phone") or "").strip() or None, email=email, address=(payload.get("address") or "").strip() or None, position="Business Owner" if workspace_mode == "individual" else "Organization Owner", role="owner", status="active")
     if not owner.first_name or not owner.last_name: raise ValueError("First name and last name are required.")
-    owner.set_password(payload.get("password")); db.session.add(owner); db.session.flush(); create_audit(organization.id, owner.id, "owner_registered", f"{owner.display_name} created a SAGE {workspace_mode} workspace."); db.session.commit(); return owner
+    owner.set_password(payload.get("password")); db.session.add(owner); db.session.flush(); logo_file = clean_logo_upload(logo_file)
+    if logo_file: save_attachment(current_app, logo_file, owner, "organization", organization.id, kind="organization_logo", final=True)
+    create_audit(organization.id, owner.id, "owner_registered", f"{owner.display_name} created a SAGE {workspace_mode} workspace."); db.session.commit(); return owner
 
 
 # ==========================================================
