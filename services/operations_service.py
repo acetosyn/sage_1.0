@@ -188,6 +188,10 @@ def create_request(app, user, payload):
 
 
 def decide_request(app, actor, request_row, action, note=None):
+    action=(action or '').strip().lower()
+    from models import ImprestReplenishment
+    imprest=ImprestReplenishment.query.filter_by(organization_id=actor.organization_id,request_id=request_row.id).first()
+    if imprest and action=='money_sent':raise ValueError('Release this replenishment from Petty Cash & Imprest to avoid a duplicate cash posting.')
     action = (action or "").strip().lower(); now = datetime.now(timezone.utc); note = (note or "").strip() or None; before = {"status":request_row.status,"approved_by_id":request_row.approved_by_id,"money_sent_by_id":request_row.money_sent_by_id,"rejected_by_id":request_row.rejected_by_id,"decision_note":request_row.decision_note}
     if action in {"approve", "reject"}:
         allowed, reason, rule = can_actor_approve_request(actor, request_row)
@@ -199,7 +203,7 @@ def decide_request(app, actor, request_row, action, note=None):
         owner_needed = request_balance_breakdown(request_row)["owner_needed"]
         if not request_row.funding: db.session.add(RequestFunding(request_id=request_row.id, organization_id=actor.organization_id, department_id=request_row.department_id, recorded_by_id=actor.id, approved_budget=owner_needed, amount_sent=0, currency=request_row.currency))
         from services.budget_control_service import sync_request_budget
-        sync_request_budget(request_row, actor, amount=owner_needed)
+        if not imprest:sync_request_budget(request_row, actor, amount=owner_needed)
         title, message, level = "Request approved", f"{request_row.reference} for {request_row.title} was approved by {actor.display_name}. Stage 2 acquisition logging is now available; funding can be recorded separately.", "success"
     elif action == "money_sent":
         if request_row.status not in {"approved"}: raise ValueError("Approve the request before recording money sent/granted.")
@@ -209,6 +213,7 @@ def decide_request(app, actor, request_row, action, note=None):
     elif action == "reject":
         if request_row.status not in {"submitted", "approved"}: raise ValueError("This request cannot be rejected at its current stage.")
         request_row.status, request_row.rejected_at, request_row.rejected_by_id, request_row.decision_note = "rejected", now, actor.id, note
+        if imprest:imprest.status='rejected'
         restored = Decimal("0")
         for tx in RequestBalanceTransaction.query.filter_by(organization_id=request_row.organization_id, target_request_id=request_row.id, transaction_type="allocation", status="posted").all(): restored += Decimal(tx.amount or 0); tx.status = "void"
         if restored > 0: record_activity(app, actor, "request_balance_restored", "Applied balance restored", f"{request_row.reference} was rejected, so {request_row.currency} {restored:,.2f} of inherited request balance was automatically restored to the staff member's earlier request balance.", "request", request_row.id, {"restored_balance":float(restored)}, notify_owner=False, level="info")
@@ -222,6 +227,9 @@ def decide_request(app, actor, request_row, action, note=None):
 
 
 def save_request_funding(app, actor, request_row, payload):
+    from models import ImprestReplenishment
+    if ImprestReplenishment.query.filter_by(organization_id=actor.organization_id,request_id=request_row.id).first():
+        raise ValueError("Release approved replenishment from Petty Cash & Imprest to preserve its cash ledger.")
     """Record an approved budget and external cash release; any released amount becomes one traceable SAGE expense without pretending SAGE moved the money."""
     if actor.organization_id != request_row.organization_id or actor.role not in {"owner", "admin", "finance"}: raise PermissionError("You do not have permission to record request funding.")
     if request_row.status not in {"approved", "money_sent", "fulfilled", "verified"}: raise ValueError("Approve the request before recording its budget/funding.")
@@ -248,6 +256,9 @@ def save_request_funding(app, actor, request_row, payload):
 # ==========================================================
 
 def save_fulfillment(app, user, request_row, form, receipt_file=None, item_image_file=None):
+    from models import ImprestReplenishment
+    if ImprestReplenishment.query.filter_by(organization_id=user.organization_id,request_id=request_row.id).first():
+        raise ValueError("Imprest replenishments are retired in Petty Cash & Imprest, using the original receipts.")
     if request_row.organization_id != user.organization_id: raise PermissionError("Request is outside your organization.")
     if user.role not in {"owner", "admin", "finance", "procurement"} and request_row.requester_id != user.id and request_row.department_id != user.department_id: raise PermissionError("You cannot record this acquisition.")
     if request_row.status not in {"approved", "money_sent", "fulfilled"}: raise ValueError("The request must be approved before Stage 2 acquisition details can be recorded.")
@@ -331,6 +342,10 @@ def post_fulfillment_to_assets(user, request_row, fulfillment, form):
 
 def move_stock(app, user, item, movement_type, qty, destination=None, destination_department=None, reason=None, recipient=None):
     """Post a controlled stock movement; transfers create/update the destination department balance instead of losing stock."""
+    from models import StockBatch, StockProfile
+    profile=StockProfile.query.filter_by(organization_id=user.organization_id,inventory_id=item.id).first()
+    if StockBatch.query.filter_by(organization_id=user.organization_id,inventory_id=item.id).count() or (profile and profile.branch_id):
+        raise ValueError("Use Advanced Stock Control for this item's batch and branch movements.")
     movement_type = (movement_type or "").strip().lower(); qty = quantity(qty, "0")
     if item.organization_id != user.organization_id: raise PermissionError("Inventory item is outside your organization.")
     if destination_department and destination_department.organization_id != user.organization_id: raise PermissionError("Destination department is outside your organization.")

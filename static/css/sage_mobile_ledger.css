@@ -1,0 +1,392 @@
+/* ========================================================================== */
+/* SAGE — STABLE MOBILE LEDGER                                                */
+/* -------------------------------------------------------------------------- */
+/* Purpose: restore the successful SAGE 7.0 mobile table/register experience */
+/* without changing desktop, sidebar icons, dashboard cards or global sizing. */
+/*                                                                            */
+/* IMPORTANT: every rule in this file is mobile-only. No JavaScript required. */
+/* ========================================================================== */
+
+@media (max-width: 900px) {
+  /* ---------------------------------------------------------------------- */
+  /* MOBILE REGISTER SHELL                                                   */
+  /* ---------------------------------------------------------------------- */
+  .main-content { overflow-x: hidden !important; }
+
+  :is(
+    .table-scroll,
+    .table-scroller,
+    .table-wrap,
+    .finance-workbook-scroll,
+    .money-table-scroll,
+    .history-ledger-scroll,
+    .request-ledger-scroll,
+    .staff-history-scroll,
+    .report-table-scroll,
+    .platform-login-table-wrap,
+    .platform-admin-table-wrap
+  ) {
+    position: relative !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior-inline: contain !important;
+    scrollbar-width: thin !important;
+    scrollbar-color: color-mix(in srgb, var(--sage5-accent, var(--blue)) 35%, var(--border)) transparent !important;
+    border: 1px solid color-mix(in srgb, var(--sage5-accent, var(--blue)) 13%, var(--border)) !important;
+    border-radius: 12px !important;
+    background: var(--surface) !important;
+    box-shadow: 0 7px 20px color-mix(in srgb, #0f172a 4%, transparent) !important;
+  }
+
+  :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll)::-webkit-scrollbar {
+    height: 6px !important;
+  }
+  :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll)::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--sage5-accent, var(--blue)) 38%, var(--border)) !important;
+    border-radius: 999px !important;
+  }
+  :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll)::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* REAL TABLES ON MOBILE — NEVER CONVERT ROWS INTO GIANT CARDS            */
+  /* ---------------------------------------------------------------------- */
+  .main-content :is(
+    .table-scroll,
+    .table-scroller,
+    .table-wrap,
+    .finance-workbook-scroll,
+    .money-table-scroll,
+    .history-ledger-scroll,
+    .request-ledger-scroll,
+    .staff-history-scroll,
+    .report-table-scroll
+  ) table {
+    display: table !important;
+    width: max-content !important;
+    min-width: 760px !important;
+    max-width: none !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    table-layout: auto !important;
+    background: var(--surface) !important;
+  }
+
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table thead {
+    display: table-header-group !important;
+  }
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table tbody {
+    display: table-row-group !important;
+    width: auto !important;
+  }
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table tr {
+    display: table-row !important;
+    width: auto !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    transform: none !important;
+    translate: none !important;
+  }
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table th,
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table td {
+    display: table-cell !important;
+    width: auto !important;
+    min-width: 118px !important;
+    max-width: 250px !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 10px 10px !important;
+    border: 0 !important;
+    border-right: 1px solid color-mix(in srgb, var(--border) 70%, transparent) !important;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 82%, transparent) !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    overflow-wrap: break-word !important;
+    word-break: normal !important;
+    text-align: left !important;
+    vertical-align: top !important;
+    line-height: 1.34 !important;
+  }
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table th {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 6 !important;
+    background: color-mix(in srgb, var(--sage5-accent, var(--blue)) 7%, var(--surface-2)) !important;
+    color: color-mix(in srgb, var(--text) 74%, var(--muted)) !important;
+    font-size: 8px !important;
+    font-weight: 900 !important;
+    letter-spacing: .04em !important;
+    text-transform: uppercase !important;
+    white-space: nowrap !important;
+  }
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table td {
+    font-size: 10px !important;
+    font-weight: 560 !important;
+    color: color-mix(in srgb, var(--text) 86%, var(--muted)) !important;
+  }
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table td::before {
+    content: none !important;
+    display: none !important;
+  }
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table td :is(strong,b) {
+    font-size: 10.5px !important;
+    line-height: 1.3 !important;
+    font-weight: 830 !important;
+    white-space: normal !important;
+    overflow-wrap: break-word !important;
+  }
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table td small {
+    display: block !important;
+    margin-top: 3px !important;
+    font-size: 8px !important;
+    line-height: 1.28 !important;
+    color: var(--muted) !important;
+    white-space: normal !important;
+  }
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table tbody tr:nth-child(even) td {
+    background: color-mix(in srgb, var(--sage5-accent, var(--blue)) 1.7%, var(--surface)) !important;
+  }
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table tbody tr:hover td {
+    background: color-mix(in srgb, var(--sage5-accent, var(--blue)) 4.5%, var(--surface)) !important;
+    transform: none !important;
+  }
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table td[colspan] {
+    display: table-cell !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    padding: 20px !important;
+    text-align: center !important;
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* TABLE-SPECIFIC WIDTHS                                                   */
+  /* ---------------------------------------------------------------------- */
+  .finance-workbook-table { min-width: 1220px !important; }
+  .finance-workbook-table th:nth-child(1), .finance-workbook-table td:nth-child(1) { min-width: 190px !important; }
+  .finance-workbook-table th:nth-child(2), .finance-workbook-table td:nth-child(2) { min-width: 135px !important; }
+  .finance-workbook-table th:nth-child(3), .finance-workbook-table td:nth-child(3) { min-width: 280px !important; max-width: 310px !important; }
+  .finance-workbook-table th:nth-child(4), .finance-workbook-table td:nth-child(4) { min-width: 190px !important; }
+  .finance-workbook-table th:nth-child(5), .finance-workbook-table td:nth-child(5) { min-width: 160px !important; }
+  .finance-workbook-table th:nth-child(6), .finance-workbook-table td:nth-child(6) { min-width: 175px !important; }
+  .finance-workbook-table th:nth-child(7), .finance-workbook-table td:nth-child(7) { min-width: 175px !important; }
+  .finance-workbook-table th:nth-child(8), .finance-workbook-table td:nth-child(8) { min-width: 105px !important; }
+  .finance-workbook-table th:nth-child(9), .finance-workbook-table td:nth-child(9) { min-width: 135px !important; }
+
+  .money-ledger-table { min-width: 1320px !important; }
+  .expense-ledger-table { min-width: 1460px !important; }
+  .money-ledger-table th:nth-child(1), .money-ledger-table td:nth-child(1) { min-width: 178px !important; }
+  .money-ledger-table th:nth-child(2), .money-ledger-table td:nth-child(2) { min-width: 130px !important; }
+  .money-ledger-table th:nth-child(3), .money-ledger-table td:nth-child(3) { min-width: 270px !important; max-width: 300px !important; }
+  .money-ledger-table th:last-child, .money-ledger-table td:last-child { min-width: 135px !important; white-space: nowrap !important; text-align: right !important; }
+
+  .owner-history-table, .staff-history-table { min-width: 1080px !important; }
+  .report-ledger-table { min-width: 900px !important; }
+  .operations-table { min-width: 820px !important; }
+  .v4-workspace .table-wrap table { min-width: 720px !important; }
+
+  /* ---------------------------------------------------------------------- */
+  /* STICKY IDENTITY COLUMNS — KEEPS CONTEXT WHILE SWIPING                  */
+  /* ---------------------------------------------------------------------- */
+  .finance-workbook-table th:first-child,
+  .finance-workbook-table td:first-child,
+  .money-ledger-table th:first-child,
+  .money-ledger-table td:first-child,
+  .report-ledger-table th:first-child,
+  .report-ledger-table td:first-child,
+  .v4-workspace .table-wrap table th:first-child,
+  .v4-workspace .table-wrap table td:first-child {
+    position: sticky !important;
+    left: 0 !important;
+    z-index: 5 !important;
+    background: var(--surface) !important;
+    box-shadow: 8px 0 14px -13px rgba(15,23,42,.5) !important;
+  }
+  .finance-workbook-table th:first-child,
+  .money-ledger-table th:first-child,
+  .report-ledger-table th:first-child,
+  .v4-workspace .table-wrap table th:first-child { z-index: 8 !important; background: color-mix(in srgb, var(--sage5-accent, var(--blue)) 7%, var(--surface-2)) !important; }
+
+  .owner-history-table th:first-child,
+  .owner-history-table td:first-child,
+  .staff-history-table th:first-child,
+  .staff-history-table td:first-child {
+    position: sticky !important;
+    left: 0 !important;
+    width: 42px !important;
+    min-width: 42px !important;
+    max-width: 42px !important;
+    z-index: 5 !important;
+    background: var(--surface) !important;
+  }
+  .owner-history-table th:nth-child(2),
+  .owner-history-table td:nth-child(2),
+  .staff-history-table th:nth-child(2),
+  .staff-history-table td:nth-child(2) {
+    position: sticky !important;
+    left: 42px !important;
+    min-width: 190px !important;
+    z-index: 5 !important;
+    background: var(--surface) !important;
+    box-shadow: 8px 0 14px -13px rgba(15,23,42,.5) !important;
+  }
+  .owner-history-table th:first-child,.owner-history-table th:nth-child(2),
+  .staff-history-table th:first-child,.staff-history-table th:nth-child(2) {
+    z-index: 8 !important;
+    background: color-mix(in srgb, var(--sage5-accent, var(--blue)) 7%, var(--surface-2)) !important;
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* MONEY / STATUS / ACTION LEGIBILITY                                     */
+  /* ---------------------------------------------------------------------- */
+  .finance-workbook-table .finance-money,
+  .money-ledger-table .finance-money,
+  .money-ledger-table .money-amount-cell {
+    font-size: 11px !important;
+    font-weight: 900 !important;
+    font-variant-numeric: tabular-nums !important;
+    white-space: nowrap !important;
+  }
+  :is(.finance-workbook-table,.money-ledger-table,.owner-history-table,.staff-history-table,.report-ledger-table) :is(.status,.status-badge,.income-type,.expense-type) {
+    font-size: 8px !important;
+    padding: 5px 7px !important;
+    white-space: nowrap !important;
+  }
+  :is(.owner-history-table,.staff-history-table,.report-ledger-table,.data-table) td :is(.btn,button,a.evidence) {
+    min-height: 30px !important;
+    height: auto !important;
+    padding: 6px 8px !important;
+    border-radius: 8px !important;
+    font-size: 8px !important;
+    white-space: nowrap !important;
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* REGISTER FILTERS — COMPACT SWIPE SHELF, NOT GIANT MOBILE STACKS        */
+  /* ---------------------------------------------------------------------- */
+  .money-filter-shell,
+  .finance-workbook-filters {
+    display: flex !important;
+    grid-template-columns: none !important;
+    align-items: flex-end !important;
+    gap: 7px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior-inline: contain !important;
+    scrollbar-width: none !important;
+    padding: 9px !important;
+  }
+  .money-filter-shell::-webkit-scrollbar,
+  .finance-workbook-filters::-webkit-scrollbar { display: none !important; }
+
+  .money-filter-shell > label,
+  .finance-workbook-filters > label {
+    flex: 0 0 122px !important;
+    width: 122px !important;
+    min-width: 122px !important;
+  }
+  .money-filter-shell > .money-search-field,
+  .finance-workbook-filters > .finance-workbook-search {
+    flex-basis: 178px !important;
+    width: 178px !important;
+    min-width: 178px !important;
+  }
+  .money-filter-shell > button,
+  .finance-workbook-filters > button {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 88px !important;
+    max-width: 108px !important;
+    height: 36px !important;
+    align-self: flex-end !important;
+    padding-inline: 10px !important;
+    font-size: 9px !important;
+  }
+  .money-filter-shell label > span,
+  .finance-workbook-filters label > span {
+    font-size: 7px !important;
+    line-height: 1.1 !important;
+    margin-bottom: 4px !important;
+    letter-spacing: .04em !important;
+  }
+  .money-filter-shell :is(input,select),
+  .finance-workbook-filters :is(input,select),
+  .money-filter-shell .inline-search,
+  .finance-workbook-filters .inline-search {
+    height: 36px !important;
+    min-height: 36px !important;
+    border-radius: 9px !important;
+    font-size: 9.5px !important;
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* REGISTER HEADS / SUMMARY — READABLE, WITHOUT RESIZING DASHBOARD CARDS  */
+  /* ---------------------------------------------------------------------- */
+  .finance-workbook-panel,
+  .money-register-panel { overflow: hidden !important; }
+  .finance-workbook-head,
+  .money-register-head {
+    gap: 9px !important;
+    padding: 12px !important;
+  }
+  .finance-workbook-head h2,
+  .money-register-head h2 { font-size: 17px !important; line-height: 1.15 !important; }
+  .finance-workbook-head p,
+  .money-register-head p:not(.eyebrow) { font-size: 9.5px !important; line-height: 1.4 !important; }
+  .finance-workbook-result,
+  .money-filter-result { min-width: 72px !important; padding: 8px !important; }
+  .finance-workbook-result strong,
+  .money-filter-result strong { font-size: 18px !important; }
+
+  /* Mobile finance summary remains compact but figures stay readable. */
+  .finance-workbook-summary,
+  .money-filter-summary {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0,1fr)) !important;
+    gap: 0 !important;
+  }
+  .finance-workbook-summary > span,
+  .money-filter-summary > span {
+    min-width: 0 !important;
+    padding: 9px 10px !important;
+    overflow: hidden !important;
+  }
+  .finance-workbook-summary small,
+  .money-filter-summary small { font-size: 7px !important; }
+  .finance-workbook-summary strong,
+  .money-filter-summary strong {
+    font-size: clamp(12px, 3.8vw, 17px) !important;
+    line-height: 1.08 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    font-variant-numeric: tabular-nums !important;
+  }
+}
+
+@media (max-width: 520px) {
+  /* Keep the ledger readable on narrow phones without shrinking the app UI. */
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table th,
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table td {
+    padding: 9px 9px !important;
+  }
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table td { font-size: 9.7px !important; }
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table td :is(strong,b) { font-size: 10.2px !important; }
+  .main-content :is(.table-scroll,.table-scroller,.table-wrap,.finance-workbook-scroll,.money-table-scroll,.history-ledger-scroll,.request-ledger-scroll,.staff-history-scroll,.report-table-scroll) table td small { font-size: 7.8px !important; }
+  .money-filter-shell > label,
+  .finance-workbook-filters > label { flex-basis: 116px !important; width: 116px !important; min-width: 116px !important; }
+  .money-filter-shell > .money-search-field,
+  .finance-workbook-filters > .finance-workbook-search { flex-basis: 168px !important; width: 168px !important; min-width: 168px !important; }
+}

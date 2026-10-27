@@ -1,0 +1,7 @@
+{% import 'partials/business_macros.html' as b %}
+<section class="v4-workspace page-shell" data-v4-workspace><div class="page-heading"><div><h1>Debtors & Credit Sales</h1><p>Existing finance receivables and customer invoices share the same outstanding balances.</p></div></div>
+{% include 'partials/operational_observer_banner.html' %}
+<div class="control-metrics">{% for label,value in v4_credit_metrics %}<article><span>{{ label }}</span><strong>{{ sage_money(value) }}</strong></article>{% endfor %}</div>
+{% if operational_access.sales %}{% include 'partials/sales_form.html' %}{% endif %}
+<label>Search debts<input type="search" class="v4-search" data-v4-search></label><div class="table-wrap"><table><tr><th>Customer / invoice</th><th>Total</th><th>Received</th><th>Outstanding</th><th>Due</th><th>Payment</th></tr>{% for r in v4_receivables if r.balance>0 %}<tr data-v4-search-row><td>{{ r.customer_name }}<br>{{ r.invoice_number or r.reference }}</td><td>{{ sage_money(r.total_amount) }}</td><td>{{ sage_money(r.amount_received) }}</td><td>{{ sage_money(r.balance) }}</td><td>{{ r.due_date or 'Not set' }}{% if r.due_date and r.due_date<v4_today %} · Overdue{% endif %}</td><td>{% set match=v4_invoices|selectattr('receivable_id','equalto',r.id)|first %}{% if match %}<a href="/debtors?invoice={{ match.id }}">Collect payment / history</a>{% else %}<a href="/finance">Open in Finance</a>{% endif %}</td></tr>{% else %}<tr><td colspan="6">No outstanding receivables.</td></tr>{% endfor %}</table></div>
+{% include 'partials/invoice_detail.html' %}</section>

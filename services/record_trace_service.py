@@ -9,6 +9,8 @@ from models import (ActivityEvent, AssetItem, AssetMovement, Attachment, AuditRe
     PurchaseRequest, RecordLink, RequestFunding, StockMovement, User, BudgetAllocation,
     Supplier, FinanceAccount, FinanceReconciliation, BudgetReservation, ReconciliationMatch)
 from packages.database import db
+from models import (EventPlan,Customer,SalesInvoice,ImprestFund,BillPlan,ComplianceDocument,
+    SupplierBill,StaffAdvance,ExpenseClaim,PayrollRun,PayrollSlip,EmployeeProfile,InvoicePayment,EventExpense,ImprestEntry,StockProfile)
 
 ENTITIES = {"request": PurchaseRequest, "fulfillment": PurchaseFulfillment,
     "financial_record": FinancialRecord, "finance_ledger": FinanceLedgerEntry,
@@ -17,11 +19,29 @@ ENTITIES = {"request": PurchaseRequest, "fulfillment": PurchaseFulfillment,
     "receivable": FinanceReceivable, "payable": FinancePayable, "user": User,
     "budget": BudgetAllocation, "supplier": Supplier, "account": FinanceAccount,
     "reconciliation": FinanceReconciliation, "request_funding": RequestFunding}
+BUSINESS_ENTITIES={'event':EventPlan,'customer':Customer,'sale':SalesInvoice,'imprest':ImprestFund,
+    'bill':BillPlan,'compliance':ComplianceDocument,'supplier_bill':SupplierBill,'staff_advance':StaffAdvance,
+    'expense_claim':ExpenseClaim,'payroll_v4':PayrollRun,'payroll_slip':PayrollSlip,'employee_profile':EmployeeProfile,
+    'invoice_payment':InvoicePayment,'event_expense':EventExpense,'imprest_entry':ImprestEntry,'stock_profile':StockProfile}
+ENTITIES.update(BUSINESS_ENTITIES)
+ENTITIES.update({model.__tablename__:model for model in BUSINESS_ENTITIES.values()})
 
 
 def permitted(user, row):
     if row.organization_id != user.organization_id: return False
+    from flask import g,has_request_context
+    limits=getattr(g,'sage_branch_limits',None) if has_request_context() else None
+    if limits:
+        if isinstance(row,User):
+            if row.id!=user.id and row.department_id not in limits[2]:return False
+        elif getattr(row,'branch_id',None)!=limits[1] and getattr(row,'department_id',None) not in limits[2]:
+            from models import BusinessRecordScope
+            tagged=BusinessRecordScope.query.filter_by(organization_id=user.organization_id,branch_id=limits[1],entity_id=row.id).first()
+            if not tagged and not isinstance(row,(StockMovement,AssetMovement,Supplier)):return False
     if user.role in {"owner", "admin", "finance"}: return True
+    if isinstance(row,(EmployeeProfile,StaffAdvance,ExpenseClaim,PayrollSlip)):return row.user_id==user.id
+    if isinstance(row,PayrollRun):return False
+    if isinstance(row,(BillPlan,ComplianceDocument)):return row.responsible_id==user.id
     if isinstance(row, (FinancialRecord, FinanceLedgerEntry, FinanceReceivable, FinancePayable)):
         if row.created_by_id == user.id: return True
         source_kind, source_id = getattr(row, "source_entity_type", None), getattr(row, "source_entity_id", None)
@@ -59,7 +79,7 @@ def describe(entity_type, row):
     if actor is None and getattr(row, "archived", False):
         actor_id = getattr(row, "created_by_id", None) or getattr(row, "requester_id", None) or getattr(row, "user_id", None)
         actor = User.query.filter_by(id=actor_id, organization_id=row.organization_id).first() if actor_id else None
-    amount = next((getattr(row, field, None) for field in ("amount", "actual_total", "amount_sent", "estimated_total", "total_amount", "total_value", "total_budget", "opening_balance") if getattr(row, field, None) is not None), None)
+    amount = next((getattr(row, field, None) for field in ("amount", "actual_total", "amount_sent", "estimated_total", "total_amount", "total", "net", "total_value", "total_budget", "opening_balance") if getattr(row, field, None) is not None), None)
     return {"type": entity_type, "id": row.id, "reference": getattr(row, "reference", None) or getattr(row, "asset_tag", None) or getattr(row, "sku", None),
         "title": next((getattr(row, field, None) for field in ("title", "description", "name", "display_name") if getattr(row, field, None)), entity_type.replace("_", " ").title()),
         "amount": str(amount) if amount is not None else None, "balance": getattr(row, "balance", None), "account_id": getattr(row, "account_id", None),
@@ -74,6 +94,27 @@ def describe(entity_type, row):
 def neighbours(user, kind, row):
     org = user.organization_id
     linked = []
+    canonical=next((name for name,model in BUSINESS_ENTITIES.items() if isinstance(row,model)),None)
+    if canonical:
+        linked += [('finance_ledger',entry) for entry in FinanceLedgerEntry.query.filter_by(organization_id=org,source_entity_type=row.__tablename__,source_entity_id=row.id)]
+        for field,target_kind in [('customer_id','customer'),('event_id','event'),('parent_id','event'),('supplier_id','supplier'),('run_id','payroll_v4'),('fund_id','imprest'),('inventory_id','inventory_item')]:
+            target_id=getattr(row,field,None)
+            if target_id:
+                target=ENTITIES[target_kind].query.filter_by(organization_id=org,id=target_id).first()
+                if target:linked.append((target_kind,target))
+        if isinstance(row,SalesInvoice):
+            receivable=FinanceReceivable.query.filter_by(organization_id=org,id=row.receivable_id).first()
+            if receivable:linked.append(('receivable',receivable))
+        if isinstance(row,Customer):linked += [('sale',sale) for sale in SalesInvoice.query.filter_by(organization_id=org,customer_id=row.id)]
+        if isinstance(row,EventPlan):
+            linked += [('event',child) for child in EventPlan.query.filter_by(organization_id=org,parent_id=row.id)]
+            linked += [('sale',sale) for sale in SalesInvoice.query.filter_by(organization_id=org,event_id=row.id)]
+        if isinstance(row,PayrollRun):linked += [('payroll_slip',slip) for slip in PayrollSlip.query.filter_by(organization_id=org,run_id=row.id)]
+        if isinstance(row,SupplierBill):
+            payable=FinancePayable.query.filter_by(organization_id=org,id=row.payable_id).first()
+            if payable:linked.append(('payable',payable))
+    if kind=='receivable':linked += [('sale',sale) for sale in SalesInvoice.query.filter_by(organization_id=org,receivable_id=row.id)]
+    if kind=='payable':linked += [('supplier_bill',bill) for bill in SupplierBill.query.filter_by(organization_id=org,payable_id=row.id)]
     if kind == "request":
         if row.fulfillment: linked.append(("fulfillment", row.fulfillment))
         linked += [("asset", item) for item in AssetItem.query.filter_by(organization_id=org, source_request_id=row.id).all()]
@@ -138,6 +179,7 @@ def record_trace(user, kind, entity_id, history_offset=0):
         saved = dict(revision.before_json or {})
         saved.update(id=entity_id, organization_id=user.organization_id, archived=True, status="archived")
         initial = SimpleNamespace(**saved)
+        if not permitted(user,initial):raise LookupError('Record not found in your permitted branch.')
     queue, seen, records = deque([(kind, initial)]), set(), []
     while queue and len(seen) < 250:
         node_kind, row = queue.popleft()

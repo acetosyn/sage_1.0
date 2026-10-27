@@ -3,6 +3,7 @@
 
 from openai import OpenAI
 from services.reporting_service import reporting_context
+from services.business_reporting import business_snapshot
 
 # ==========================================================
 # ROLE-SCOPED LIVE CONTEXT
@@ -23,6 +24,7 @@ def _live_context(user):
     finance = finance_summary(user.organization_id) if user.role in {"owner", "admin", "finance"} else {}
     intelligence = reporting_context(user, months=6)
     return {
+        "business_operations": business_snapshot(user),
         "finance": finance,
         "intelligence": {"income_total": intelligence["income_total"], "expense_total": intelligence["expense_total"], "net": intelligence["net"], "accounts_receivable": intelligence["ar_balance"], "accounts_payable": intelligence["ap_balance"], "inventory_value": intelligence["inventory_value"], "asset_value": intelligence["asset_value"], "budget_available": intelligence["budget_available"], "request_status": intelligence["request_status"], "exceptions": intelligence["exceptions"], "monthly": intelligence["monthly"], "department_breakdown": intelligence["department_breakdown"][:6]},
         "requests": [{"reference": r.reference, "title": r.title, "department": r.department.name if r.department else None, "status": r.status, "amount": float(r.estimated_total or 0), "requester": r.requester.display_name if r.requester else None} for r in requests],

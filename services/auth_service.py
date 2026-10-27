@@ -9,6 +9,7 @@ from packages.database import db
 from models import AuditLog, Department, Organization, OrganizationWorkspace, PlatformOwnerControl, StaffInvitation, User
 from services.organization_catalog import BUSINESS_TYPE_MAP, canonical_business_for_individual, suggested_departments
 from services.storage_service import save_attachment
+from services.currency_service import normalize_currency
 
 
 # ==========================================================
@@ -63,7 +64,7 @@ def register_owner(payload, logo_file=None):
     if not org_name: raise ValueError("Business / organization name is required.")
     branch_count = 1 if workspace_mode == "individual" else max(1, int(payload.get("branch_count") or 1))
     employee_range = (payload.get("employee_range") or ("1-2" if workspace_mode == "individual" else "")).strip() or None
-    organization = Organization(name=org_name, slug=unique_slug(org_name), business_type=business["label"], country=(payload.get("country") or "Nigeria").strip(), state=(payload.get("state") or "").strip() or None, address=(payload.get("organization_address") or "").strip() or None, currency=(payload.get("currency") or "NGN").strip(), employee_range=employee_range, branch_count=branch_count)
+    organization = Organization(name=org_name, slug=unique_slug(org_name), business_type=business["label"], country=(payload.get("country") or "Nigeria").strip(), state=(payload.get("state") or "").strip() or None, address=(payload.get("organization_address") or "").strip() or None, currency=normalize_currency(payload.get("currency") or "NGN"), employee_range=employee_range, branch_count=branch_count)
     db.session.add(organization); db.session.flush(); db.session.add(PlatformOwnerControl(organization_id=organization.id, status="active", plan="standard", subscription_status="trial")); db.session.add(OrganizationWorkspace(organization_id=organization.id, workspace_mode=workspace_mode, business_category_key=business_category_key, business_category_label=business_category_label, catalog_key=business_key, primary_department_name=primary_department_name))
 
     chosen_departments = ([primary_department_name] if workspace_mode == "individual" else (payload.get("departments") or suggested_departments(business_key))); seen, first_department = set(), None

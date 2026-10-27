@@ -2,7 +2,13 @@
 
 SAGE is a Flask-first multi-tenant business operating system for owners, departments and staff. It keeps traditional Python/Flask architecture while using partial navigation, live events and responsive UI so the workspace behaves more like installed software than a page-by-page website.
 
-## Current development build — Phases 1–7
+## SAGE Upgrade 4.0
+
+The existing application now includes Events & Campaigns, Customers/CRM and credit sales, Suppliers, Petty Cash/Imprest, daily POS reconciliation, branch access, advanced stock, bills, compliance and staff finance/payroll. These modules share the existing finance, evidence, notification and audit systems, with simplified workflows for Individual owners.
+
+See [SAGE_UPGRADE_4.md](SAGE_UPGRADE_4.md) for the six-phase implementation, operating rules, validation results, additive schema upgrade and reminder scheduler commands. Run `python -m unittest discover -s tests -v` for the complete regression suite; `python tools/qa_sage4.py --smoke` checks full and partial pages against an isolated database.
+
+## Architecture foundation — original Phases 1–7
 
 - **Phase 1:** tenant isolation, authentication, real-time SSE notifications, email escalation and Platform Admin.
 - **Phase 2:** role-specific staff workspaces, department catalogue, custom items and department-aware tools.

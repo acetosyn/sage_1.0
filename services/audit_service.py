@@ -14,6 +14,13 @@ TRACKED = {
     "CustodyAcknowledgment", "ReconciliationMatch", "BudgetReservation", "TaskComment", "DirectPurchaseLine", "ObligationTerms"
 }
 SECRET_FIELDS = {"password_hash", "token", "auth", "p256dh"}
+TRACKED.update({"BusinessPosting", "BranchMembership", "EventPlan", "EventBudget", "EventCash", "EventExpense", "EventResource", "EventReport"})
+TRACKED.update({"Customer", "CustomerActivity", "SalesInvoice", "SalesLine", "InvoicePayment"})
+TRACKED.update({"SupplierProfile", "SupplierQuotation", "SupplierBill", "ImprestFund", "ImprestEntry", "ImprestReplenishment"})
+TRACKED.update({"BusinessRecordScope","BranchAccount","DailyClose"})
+TRACKED.update({'StockProfile','StockBatch','StockAllocation','StockCount','BillPlan','BillPayment','ComplianceDocument','ComplianceRenewal'})
+TRACKED.update({'EmployeeProfile','StaffAdvance','ExpenseClaim','PayrollRun','PayrollSlip','PayrollAdvanceRecovery'})
+TRACKED.update({'EventTransfer','AutomationRun'})
 
 
 def value_json(value):

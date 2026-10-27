@@ -84,8 +84,12 @@ def management_workspace(user, period="monthly"):
     available_cash = number(sum(row["balance"] for row in cash_accounts))
     receivables, payables = scoped(FinanceReceivable, user).all(), scoped(FinancePayable, user).all()
     payment_map = defaultdict(list)
+    from services.business_core import business_payment_targets
+    payment_targets=business_payment_targets(user)
     for row in posted_ledger:
         if row.source_entity_type in {"receivable", "payable"}: payment_map[row.source_entity_id].append(row)
+        elif (row.source_entity_type,row.source_entity_id) in payment_targets and row.direction in {'in','out'}:
+            payment_map[payment_targets[(row.source_entity_type,row.source_entity_id)][1]].append(row)
     ar, ap = aging(receivables, today, payment_map, "customer_name", "receivable"), aging(payables, today, payment_map, "vendor_name", "payable")
     requests = scoped(PurchaseRequest, user).order_by(PurchaseRequest.created_at.desc()).all()
     fulfillments = scoped(PurchaseFulfillment, user).all()

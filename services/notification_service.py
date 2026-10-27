@@ -11,6 +11,14 @@ OWNER_ROLES = {"owner", "admin"}; QUIET_OWNER_ACTIONS = {"page_view", "finance_l
 ENTITY_ROUTES = {"user":"staff", "request":"requests", "fulfillment":"procurement", "inventory_item":"inventory", "stock_movement":"inventory", "asset":"assets", "asset_movement":"assets", "department_operation":"operations", "staff_report":"reports", "financial_record":"finance", "finance_account":"finance", "finance_ledger":"finance", "budget":"finance", "receivable":"finance", "payable":"finance", "reconciliation":"finance", "payroll":"finance", "tax":"finance", "forecast":"finance", "finance_performance_target":"income", "department":"departments", "catalog_item":"catalog", "branch":"reports", "approval_rule":"settings", "management_task":"dashboard", "report":"reports"}
 
 
+ENTITY_ROUTES.update({"event":"events", "business_events":"events"})
+ENTITY_ROUTES.update({"customer":"customers","sale":"customers"})
+ENTITY_ROUTES.update({"supplier":"suppliers","imprest":"imprest"})
+ENTITY_ROUTES.update({"daily_close":"daily_close","branch":"branches"})
+ENTITY_ROUTES.update({'bill':'bills','compliance':'compliance'})
+ENTITY_ROUTES.update({'payroll_v4':'payroll'})
+ENTITY_ROUTES.update({'stock_expiry':'stock','receivable':'debtors'})
+
 def _request_meta():
     try: return request.headers.get("X-Forwarded-For", request.remote_addr), (request.user_agent.string or "")[:300]
     except RuntimeError: return None, None

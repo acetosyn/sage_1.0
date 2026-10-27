@@ -2,8 +2,10 @@
 (() => {
   const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const recordKinds={PurchaseRequest:"request",PurchaseFulfillment:"fulfillment",FinancialRecord:"financial_record",FinanceLedgerEntry:"finance_ledger",InventoryItem:"inventory_item",AssetItem:"asset",StockMovement:"stock_movement",AssetMovement:"asset_movement",DepartmentOperation:"department_operation",FinanceReceivable:"receivable",FinancePayable:"payable",BudgetAllocation:"budget",request:"request",fulfillment:"fulfillment",inventory_item:"inventory_item",asset:"asset",receivable:"receivable",payable:"payable"};
-  const currency = () => window.SAGE_USER?.currency || '';
-  const money = value => value === null || value === undefined ? '<span>Not recorded</span>' : `<span data-private-value>${escape(currency())} ${Number(value).toLocaleString(undefined,{maximumFractionDigits:2})}</span>`;
+  // ======================================================
+  // SAGE MONEY DISPLAY — CONTROL WORKSPACES USE THE GLOBAL FX-AWARE FORMATTER
+  // ======================================================
+  const money = (value,sourceCurrency=null) => value === null || value === undefined ? '<span>Not recorded</span>' : `<span data-private-value>${escape(window.SAGE_CURRENCY?.format?.(value,sourceCurrency||window.SAGE_USER?.base_currency||window.SAGE_USER?.currency,2)??Number(value).toLocaleString(undefined,{maximumFractionDigits:2}))}</span>`;
   const date = value => value ? escape(new Date(value).toLocaleString()) : 'Not recorded';
   const empty = message => `<div class="dashboard-empty"><strong>${escape(message)}</strong><p>Records appear here as your team saves real activity.</p></div>`;
   const recordButton = (kind,id,label) => `<button type="button" class="control-record-link" data-open-record="${escape(kind)}:${escape(id)}">${escape(label)}</button>`;

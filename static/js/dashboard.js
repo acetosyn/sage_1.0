@@ -179,19 +179,18 @@
       const button = event.currentTarget;
       if (button.disabled || !refresh) return;
       button.disabled = true; button.setAttribute('aria-busy', 'true');
-      $('[data-dashboard-freshness]').textContent = 'Refreshing…';
+      const freshness=$('[data-dashboard-freshness]'); if (freshness) freshness.textContent = 'Refreshing…';
       announce('Refreshing dashboard.');
       try {
         const updated = await refresh();
         if (updated !== false) document.querySelector('[data-dashboard-announcement]')?.replaceChildren(document.createTextNode('Dashboard refreshed.'));
       } catch {
-        if (dashboard.isConnected) { $('[data-dashboard-freshness]').textContent = 'Refresh unavailable'; announce('Could not refresh. Try again.'); }
+        if (dashboard.isConnected) { const freshness=$('[data-dashboard-freshness]'); if (freshness) freshness.textContent = 'Refresh unavailable'; announce('Could not refresh. Try again.'); }
       } finally { button.disabled = false; button.removeAttribute('aria-busy'); }
     });
 
     const updated = new Date();
-    $('[data-dashboard-freshness]').textContent = `Updated ${updated.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`;
-    $('[data-dashboard-freshness]').title = updated.toLocaleString();
+    const freshness=$('[data-dashboard-freshness]'); if (freshness) { freshness.textContent = `Updated ${updated.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`; freshness.title = updated.toLocaleString(); }
     activateTab(state.tab); applyPrivacy(); applyFocus(); applyDensity(); filterDepartments(); filterAttention();
   }
 

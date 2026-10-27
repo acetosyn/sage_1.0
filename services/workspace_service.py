@@ -40,8 +40,8 @@ def request_management_context(user, requests):
         if row.status == "submitted": bucket["pending"] += 1; pending_total += owner_needed
         if row.status in {"approved", "money_sent", "fulfilled", "verified"}: bucket["approved"] += 1; approved_total += amount
         if str(row.urgency or "").lower() in {"urgent", "critical"}: urgent_count += 1
-    department_rows = sorted(department_map.values(), key=lambda item: (item["pending"], item["count"], item["owner_needed"]), reverse=True)
-    return {"department_rows": department_rows, "pending_total": pending_total, "approved_total": approved_total, "gross_total":gross_total, "balance_applied_total":balance_applied_total, "urgent_count": urgent_count, "request_count": len(rows), "departments_with_requests": len(department_rows), "latest": rows[:8]}
+    department_rows = sorted(department_map.values(), key=lambda item: (item["pending"], item["count"], item["owner_needed"]), reverse=True); active = [row for row in rows if row.status in {"submitted", "approved", "money_sent"}]; history = [row for row in rows if row.status in {"fulfilled", "verified", "rejected"}]; history_counts = {"fulfilled":sum(1 for row in history if row.status == "fulfilled"), "verified":sum(1 for row in history if row.status == "verified"), "rejected":sum(1 for row in history if row.status == "rejected")}
+    return {"department_rows": department_rows, "pending_total": pending_total, "approved_total": approved_total, "gross_total":gross_total, "balance_applied_total":balance_applied_total, "urgent_count": urgent_count, "request_count": len(rows), "departments_with_requests": len(department_rows), "latest": rows[:8], "active":active, "active_count":len(active), "history":history, "history_count":len(history), "history_counts":history_counts}
 
 
 def request_funds_context(user, requests):

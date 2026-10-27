@@ -55,10 +55,10 @@ def organization_rows(search="", status="all", limit=120):
         control = get_control(org.id, create=True)
         if status != "all" and control.status != status: continue
         owner = User.query.filter_by(organization_id=org.id, role="owner").order_by(User.created_at.asc()).first()
-        staff_count = User.query.filter(User.organization_id == org.id, User.role != "owner", User.status != "deleted").count(); total_users = User.query.filter_by(organization_id=org.id).count(); departments = Department.query.filter_by(organization_id=org.id, is_active=True).count(); requests = PurchaseRequest.query.filter_by(organization_id=org.id).count(); inventory = InventoryItem.query.filter_by(organization_id=org.id).count(); attachments = Attachment.query.filter_by(organization_id=org.id).count(); activity_count = ActivityEvent.query.filter_by(organization_id=org.id).count(); last_activity = ActivityEvent.query.filter_by(organization_id=org.id).order_by(ActivityEvent.created_at.desc()).first()
+        staff_members = User.query.filter(User.organization_id == org.id, User.role != "owner", User.status != "deleted").order_by(User.created_at.asc()).all(); staff_count = len(staff_members); total_users = User.query.filter_by(organization_id=org.id).count(); departments = Department.query.filter_by(organization_id=org.id, is_active=True).count(); requests = PurchaseRequest.query.filter_by(organization_id=org.id).count(); inventory = InventoryItem.query.filter_by(organization_id=org.id).count(); attachments = Attachment.query.filter_by(organization_id=org.id).count(); activity_count = ActivityEvent.query.filter_by(organization_id=org.id).count(); last_activity = ActivityEvent.query.filter_by(organization_id=org.id).order_by(ActivityEvent.created_at.desc()).first()
         income = db.session.query(func.coalesce(func.sum(FinancialRecord.amount), 0)).filter(FinancialRecord.organization_id == org.id, FinancialRecord.record_type.in_(["income", "revenue"]), FinancialRecord.status == "posted").scalar() or 0
         expenses = db.session.query(func.coalesce(func.sum(FinancialRecord.amount), 0)).filter(FinancialRecord.organization_id == org.id, FinancialRecord.record_type.in_(["expense", "expenditure", "operating_cost", "payroll", "tax"]), FinancialRecord.status == "posted").scalar() or 0
-        rows.append({"organization": org, "control": control, "owner": owner, "staff_count": staff_count, "total_users": total_users, "department_count": departments, "request_count": requests, "inventory_count": inventory, "attachment_count": attachments, "activity_count": activity_count, "last_activity": last_activity, "income": float(income), "expenses": float(expenses), "net": float(income) - float(expenses)})
+        rows.append({"organization": org, "control": control, "owner": owner, "staff_members": staff_members, "staff_count": staff_count, "total_users": total_users, "department_count": departments, "request_count": requests, "inventory_count": inventory, "attachment_count": attachments, "activity_count": activity_count, "last_activity": last_activity, "income": float(income), "expenses": float(expenses), "net": float(income) - float(expenses)})
     db.session.commit(); return rows
 
 
@@ -86,6 +86,10 @@ def permanent_delete_organization(app, organization_id, admin_username):
     PlatformAdminAudit.query.filter_by(organization_id=organization_id).update({"organization_id": None}, synchronize_session=False)
 
     # Child/operational records first. The ordering deliberately avoids restrictive FK chains on PostgreSQL and SQLite.
+    # New SAGE 4.0 children reference legacy records; remove them first during an explicitly authorized permanent tenant deletion.
+    for table in reversed(db.metadata.sorted_tables):
+        if table.name.startswith('business_') and 'organization_id' in table.c:
+            db.session.execute(table.delete().where(table.c.organization_id==organization_id))
     from models import TaskComment, ManagementTask, RecordLink, BudgetReservation, ReconciliationMatch, FinanceVerification, CustodyAcknowledgment, DirectPurchaseLine, ObligationTerms, AuditRevision, Supplier, BranchDepartment, BranchLocation, ApprovalRule
     for child in (TaskComment, ManagementTask, RecordLink, BudgetReservation, ReconciliationMatch, FinanceVerification, CustodyAcknowledgment, DirectPurchaseLine, ObligationTerms, AuditRevision, Supplier, BranchDepartment, ApprovalRule): child.query.filter_by(organization_id=organization_id).delete(synchronize_session=False)
     BranchLocation.query.filter_by(organization_id=organization_id).delete(synchronize_session=False)

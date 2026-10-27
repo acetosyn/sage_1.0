@@ -1,0 +1,32 @@
+{% macro input(name, label, type='text', required=false, value='', step='0.01') -%}
+<label>{{ label }}<input name="{{ name }}" type="{{ type }}" {% if required %}required{% endif %} value="{{ value }}" {% if type == 'number' %}min="0" step="{{ step }}"{% endif %}></label>
+{%- endmacro %}
+{% macro textarea(name, label, required=false, value='') -%}
+<label class="v4-wide">{{ label }}<textarea name="{{ name }}" {% if required %}required{% endif %}>{{ value or '' }}</textarea></label>
+{%- endmacro %}
+{% macro select(name, label, rows, empty='Choose…', value_field='id', label_field='name', required=false) -%}
+<label>{{ label }}<select name="{{ name }}" {% if required %}required{% endif %}><option value="">{{ empty }}</option>{% for row in rows %}<option value="{{ row[value_field] }}">{{ row[label_field] }}</option>{% endfor %}</select></label>
+{%- endmacro %}
+{% macro choices(name,label,values,selected=none) -%}
+<label>{{ label }}<select name="{{ name }}">{% for value in values %}<option value="{{ value }}" {% if value==selected %}selected{% endif %}>{{ value|replace('_',' ')|title }}</option>{% endfor %}</select></label>
+{%- endmacro %}
+{% macro dimensions(departments, branches, individual) -%}
+{% if not individual %}{{ select('department_id','Department',departments,'My department / business') }}{% endif %}
+{% if branches %}{{ select('branch_id','Branch',branches,'Business / department branch') }}{% endif %}
+{%- endmacro %}
+{% macro payment(methods,accounts) -%}
+{{ choices('method','Payment channel',methods) }}{% if accounts %}{{ select('account_id','Finance account',accounts,'No specific account') }}{% endif %}
+{{ input('occurred_at','Transaction time (local)','datetime-local') }}{{ input('external_reference','Payment reference') }}
+{%- endmacro %}
+{% macro evidence(required=false) -%}
+<label>Receipt / evidence<input type="file" name="evidence" accept=".pdf,.png,.jpg,.jpeg,.webp" {% if required %}required{% endif %}></label>
+{%- endmacro %}
+{% macro stamp(value,empty='Not recorded') -%}
+{% if value %}<time data-sage-time="{{ value|sage_iso }}">{{ value }}</time>{% else %}{{ empty }}{% endif %}
+{%- endmacro %}
+{% macro form(endpoint,label='Save',version=none) -%}
+<form class="control-form v4-form" data-v4-form="{{ endpoint }}">{% if version %}<input type="hidden" name="version" value="{{ version }}">{% endif %}<div class="v4-form-grid">{{ caller() }}</div><p class="control-form-message" role="status" aria-live="polite"></p><button class="btn primary compact" type="submit">{{ label }}</button></form>
+{%- endmacro %}
+{% macro section(title,open=false) -%}
+<details class="control-disclosure" {% if open %}open{% endif %}><summary><strong>{{ title }}</strong></summary><div>{{ caller() }}</div></details>
+{%- endmacro %}

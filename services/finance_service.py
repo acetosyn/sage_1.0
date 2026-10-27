@@ -145,6 +145,15 @@ def create_payable(app, user, payload):
 
 
 def settle_receivable(app, user, row, amount):
+    from models import SalesInvoice
+    invoice = SalesInvoice.query.filter_by(organization_id=user.organization_id,receivable_id=row.id).with_for_update().first()
+    if invoice:
+        from services.business_core import get_row
+        from services.sales_service import collect_invoice
+        invoice = get_row(SalesInvoice,user,invoice.id,True)
+        collect_invoice(app,user,invoice,{"amount":amount})
+        db.session.commit()
+        return row
     paid = _money(amount)
     if row.organization_id != user.organization_id: raise PermissionError("Receivable is outside your organization.")
     if paid <= 0 or paid > Decimal(str(row.balance)): raise ValueError("Enter an amount not greater than the outstanding receivable.")
@@ -155,6 +164,14 @@ def settle_receivable(app, user, row, amount):
 
 
 def settle_payable(app, user, row, amount):
+    from models import SupplierBill
+    bill = SupplierBill.query.filter_by(organization_id=user.organization_id,payable_id=row.id).first()
+    if bill:
+        from services.business_core import get_row
+        from services.supplier_imprest_service import pay_supplier_bill
+        pay_supplier_bill(app,user,get_row(SupplierBill,user,bill.id,True),{"amount":amount})
+        db.session.commit()
+        return row
     paid = _money(amount)
     if row.organization_id != user.organization_id: raise PermissionError("Payable is outside your organization.")
     if paid <= 0 or paid > Decimal(str(row.balance)): raise ValueError("Enter an amount not greater than the outstanding payable.")
@@ -196,6 +213,10 @@ def create_reconciliation(app, user, payload):
 
 
 def create_payroll(app, user, payload):
+    staff_name=str(payload.get('staff_name') or '').strip()
+    period=str(payload.get('pay_period') or '').strip() or datetime.now().strftime('%B %Y')
+    if PayrollEntry.query.filter_by(organization_id=user.organization_id,staff_name=staff_name,pay_period=period).first():
+        raise ValueError('Payroll already exists for this staff member and period. Use Staff Finance & Payroll for connected payslips.')
     department = _assert_department(user, payload.get("department_id")); gross = _money(payload.get("gross_pay")); deductions = _money(payload.get("deductions")); tax = _money(payload.get("tax_amount")); net = max(Decimal("0"), gross - deductions - tax); status = str(payload.get("status") or "draft").strip().lower(); status = status if status in {"draft", "approved", "paid"} else "draft"
     if not str(payload.get("staff_name") or "").strip(): raise ValueError("Staff name is required.")
     row = PayrollEntry(organization_id=user.organization_id, department_id=department.id if department else None, created_by_id=user.id, staff_name=str(payload.get("staff_name")).strip(), employee_reference=str(payload.get("employee_reference") or "").strip() or None, pay_period=str(payload.get("pay_period") or "").strip() or datetime.now().strftime("%B %Y"), gross_pay=gross, deductions=deductions, tax_amount=tax, net_pay=net, currency=user.organization.currency, status=status, paid_at=datetime.now(timezone.utc) if status == "paid" else None, notes=str(payload.get("notes") or "").strip() or None); db.session.add(row); db.session.flush()
@@ -228,9 +249,14 @@ def finance_control_context(user):
     org = user.organization_id; currency = user.organization.currency; accounts = FinanceAccount.query.filter_by(organization_id=org, is_active=True).order_by(FinanceAccount.created_at.asc()).all(); account_rows = [{"row": row, "balance": _account_balance(row)} for row in accounts]
     ledger = FinanceLedgerEntry.query.filter_by(organization_id=org).order_by(FinanceLedgerEntry.occurred_at.desc()).all(); receivable_payments, payable_payments = {}, {}; budgets = BudgetAllocation.query.filter_by(organization_id=org).order_by(BudgetAllocation.updated_at.desc()).all(); receivables = FinanceReceivable.query.filter_by(organization_id=org).order_by(FinanceReceivable.created_at.desc()).all(); payables = FinancePayable.query.filter_by(organization_id=org).order_by(FinancePayable.created_at.desc()).all(); reconciliations = FinanceReconciliation.query.filter_by(organization_id=org).order_by(FinanceReconciliation.created_at.desc()).limit(50).all(); payroll = PayrollEntry.query.filter_by(organization_id=org).order_by(PayrollEntry.created_at.desc()).limit(80).all(); taxes = TaxEntry.query.filter_by(organization_id=org).order_by(TaxEntry.created_at.desc()).limit(80).all(); forecasts = FinanceForecast.query.filter_by(organization_id=org).order_by(FinanceForecast.created_at.desc()).limit(50).all()
 
+    from services.business_core import business_payment_targets
+    payment_targets=business_payment_targets(user)
     for entry in ledger:
         if entry.source_entity_type == "receivable" and entry.source_entity_id: receivable_payments.setdefault(entry.source_entity_id, []).append(entry)
         elif entry.source_entity_type == "payable" and entry.source_entity_id: payable_payments.setdefault(entry.source_entity_id, []).append(entry)
+        elif (entry.source_entity_type,entry.source_entity_id) in payment_targets and entry.direction in {'in','out'}:
+            kind,target=payment_targets[(entry.source_entity_type,entry.source_entity_id)]
+            (receivable_payments if kind=='receivable' else payable_payments).setdefault(target,[]).append(entry)
     ar_balance = sum(row.balance for row in receivables if row.status not in {"paid", "cancelled"}); ap_balance = sum(row.balance for row in payables if row.status not in {"paid", "cancelled"}); cash_position = sum(row["balance"] for row in account_rows); budget_total = sum(row.total_budget for row in budgets if row.status == "active"); budget_actual = sum(float(row.actual_spend or 0) for row in budgets if row.status == "active"); budget_committed = sum(float(row.committed_amount or 0) for row in budgets if row.status == "active")
     committed_requests = PurchaseRequest.query.filter(PurchaseRequest.organization_id == org, PurchaseRequest.status.in_(["approved", "money_sent"])).all(); committed_request_total = sum(float(row.estimated_total or 0) for row in committed_requests)
     expense_types = {"expense", "expenditure", "operating_cost", "payroll", "tax"}; dept_rows = []

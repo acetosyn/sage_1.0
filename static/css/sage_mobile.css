@@ -1,0 +1,224 @@
+/* ==========================================================
+   SAGE MOBILE — FRESH RESPONSIVE LAYER
+   Desktop is intentionally untouched. Every rule lives inside
+   a mobile/tablet media query so refresh/resize cannot leak state.
+   ========================================================== */
+
+@media (max-width: 820px) {
+  /* ---------- Mobile foundation ---------- */
+  html,body{max-width:100%;overflow-x:hidden!important}
+  .main-content{min-width:0!important;overflow-x:hidden!important}
+  .page-shell,.v4-workspace{min-width:0!important}
+  .page-shell{padding:18px 12px 88px!important}
+  .page-heading{gap:8px!important;margin-bottom:14px!important}
+  .page-heading h1,.v4-workspace .page-heading h1{font-size:clamp(22px,6.4vw,28px)!important;line-height:1.08!important;letter-spacing:-.035em!important}
+  .page-heading p,.v4-workspace .page-heading p{font-size:11.5px!important;line-height:1.48!important;max-width:100%!important}
+  .page-heading .eyebrow{font-size:8.5px!important;letter-spacing:.13em!important}
+  .panel,.finance-workbook-panel,.money-register-panel{border-radius:15px!important}
+  .panel{padding:13px 12px!important}
+  .panel-head{gap:9px!important;margin-bottom:10px!important}
+  .panel-head h2,.finance-workbook-head h2,.money-register-head h2{font-size:17px!important;line-height:1.18!important}
+  .panel-head p,.finance-workbook-head p,.money-register-head p:not(.eyebrow){font-size:10.5px!important;line-height:1.45!important}
+  .btn,.text-button,.evidence{font-size:10.5px!important}
+  .btn{min-height:34px!important;padding:0 10px!important;border-radius:9px!important}
+  .btn.tiny,.btn.small{min-height:30px!important;padding:0 8px!important;font-size:9.5px!important}
+  .inline-search{min-width:0!important}
+  .inline-search input{font-size:10.5px!important}
+
+  /* ---------- Top bar: compact but readable ---------- */
+  .topbar{height:64px!important;padding:0 10px!important}
+  .topbar-left,.topbar-actions{gap:5px!important;min-width:0}
+  .mobile-menu.navigation-toggle{width:46px!important;min-width:46px!important;height:42px!important;border-radius:12px!important}
+  .guide-combo{height:38px!important}
+  .guide-open-mini{width:40px!important;padding:0!important;justify-content:center!important}
+  .guide-open-mini span{display:none!important}
+  .guide-state-mini{width:42px!important;padding:0!important;justify-content:center!important}
+  .guide-state-mini b{display:none!important}
+  .ai-topbar-btn,.new-request-btn,.owner-quick-record{width:42px!important;min-width:42px!important;height:42px!important;padding:0!important;justify-content:center!important;border-radius:11px!important}
+  .ai-topbar-btn span,.new-request-btn span,.owner-quick-record span{display:none!important}
+  .font-control{width:44px!important;min-width:44px!important;height:42px!important;padding:0!important;justify-content:center!important}
+  .font-control #fontLabel,.font-control .font-chevron{display:none!important}
+  .theme-control{width:42px!important;height:42px!important}
+  .top-avatar{width:38px!important;height:38px!important;font-size:11px!important}
+
+  /* ---------- KPI/card system: mobile dimensions ---------- */
+  .income-kpi-grid,.expense-kpi-grid,.dashboard-summary-grid,.finance-kpi-grid,.control-metrics,.owner-request-kpis,.staff-request-wallet-premium{gap:9px!important}
+  .income-kpi-grid,.expense-kpi-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .income-kpi-grid>article,.expense-kpi-grid>article{min-width:0!important;min-height:108px!important;height:auto!important;padding:12px 12px 11px!important;border-radius:14px!important;overflow:hidden!important}
+  .income-kpi-grid>article:nth-child(5),.expense-kpi-grid>article:nth-child(5){grid-column:1/-1!important;min-height:82px!important}
+  .income-kpi-grid>article span,.expense-kpi-grid>article span{font-size:9px!important;line-height:1.2!important;letter-spacing:.055em!important}
+  .income-kpi-grid>article strong,.expense-kpi-grid>article strong{display:block!important;max-width:100%!important;margin-top:9px!important;font-size:clamp(20px,5.9vw,26px)!important;line-height:1.02!important;letter-spacing:-.045em!important;font-variant-numeric:tabular-nums!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+  .income-kpi-grid>article:nth-child(5) strong,.expense-kpi-grid>article:nth-child(5) strong{font-size:clamp(21px,6.2vw,27px)!important}
+  .income-kpi-grid>article small,.expense-kpi-grid>article small{display:block!important;margin-top:8px!important;font-size:9px!important;line-height:1.35!important;white-space:normal!important}
+  .income-kpi-grid .sage5-kpi-glyph,.expense-kpi-grid .sage5-kpi-glyph{width:30px!important;height:30px!important;top:10px!important;right:10px!important;border-radius:9px!important;position:absolute!important}
+
+  .income-insight-grid,.expense-insight-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:9px!important}
+  .income-insight-grid>article,.expense-insight-grid>article{min-height:88px!important;padding:11px 12px!important;border-radius:13px!important;overflow:hidden!important}
+  .income-insight-grid>article strong,.expense-insight-grid>article strong{font-size:clamp(18px,5.4vw,24px)!important;line-height:1.04!important;letter-spacing:-.035em!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+  .income-insight-grid>article span,.expense-insight-grid>article span{font-size:8.7px!important}
+  .income-insight-grid>article small,.expense-insight-grid>article small{font-size:8.8px!important;line-height:1.35!important}
+
+  .dashboard-summary-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .dashboard-summary-card{min-width:0!important;min-height:112px!important;height:auto!important;padding:12px!important;border-radius:14px!important;overflow:hidden!important}
+  .dashboard-summary-top>span{font-size:10.5px!important}
+  .dashboard-summary-amount strong{display:block!important;max-width:100%!important;font-size:clamp(20px,6vw,27px)!important;line-height:1.02!important;letter-spacing:-.045em!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;font-variant-numeric:tabular-nums!important}
+  .dashboard-summary-card>p{font-size:9px!important;line-height:1.35!important}
+
+  .stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:9px!important}
+  .stat-card{min-height:112px!important;height:auto!important;padding:13px 12px!important;border-radius:14px!important}
+  .stat-card-head strong{font-size:clamp(20px,6vw,27px)!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+  .stat-card p{font-size:9.5px!important;line-height:1.35!important}
+
+  .v4-workspace .control-metrics{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:9px!important}
+  .v4-workspace .control-metrics>article{min-height:82px!important;padding:12px 12px!important;border-radius:13px!important}
+  .v4-workspace .control-metrics span{font-size:8.8px!important}
+  .v4-workspace .control-metrics strong{margin-top:8px!important;font-size:clamp(18px,5.3vw,23px)!important;line-height:1.05!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+
+  /* ---------- Filters: one compact swipe shelf ---------- */
+  .money-filter-shell,.finance-workbook-filters{display:flex!important;grid-template-columns:none!important;align-items:flex-end!important;gap:6px!important;padding:8px!important;overflow-x:auto!important;overflow-y:hidden!important;scroll-snap-type:x proximity!important;overscroll-behavior-x:contain!important;scrollbar-width:none!important}
+  .money-filter-shell::-webkit-scrollbar,.finance-workbook-filters::-webkit-scrollbar{display:none!important}
+  .money-filter-shell>label,.finance-workbook-filters>label{flex:0 0 112px!important;width:112px!important;min-width:112px!important;grid-column:auto!important;scroll-snap-align:start!important;gap:4px!important}
+  .money-filter-shell>.money-search-field,.finance-workbook-filters>.finance-workbook-search{flex-basis:156px!important;width:156px!important;min-width:156px!important}
+  .money-filter-shell label>span,.finance-workbook-filters label>span{font-size:8px!important;line-height:1!important;letter-spacing:.045em!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+  .money-filter-shell input,.money-filter-shell select,.finance-workbook-filters input,.finance-workbook-filters select,.money-filter-shell .inline-search,.finance-workbook-filters .inline-search{height:34px!important;min-height:34px!important;border-radius:9px!important;font-size:10px!important}
+  .money-filter-shell .inline-search input,.finance-workbook-filters .inline-search input{height:32px!important;min-height:32px!important}
+  .money-clear-filter,.finance-workbook-clear{flex:0 0 72px!important;width:72px!important;min-width:72px!important;height:34px!important;min-height:34px!important;margin:0!important;padding:0 7px!important;font-size:0!important;white-space:nowrap!important}
+  .money-clear-filter::after,.finance-workbook-clear::after{content:"Clear";font-size:10px;font-weight:850}
+
+  /* ---------- Filtered totals: readable, never clipped ---------- */
+  .money-filter-summary,.finance-workbook-summary{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important}
+  .money-filter-summary>span,.finance-workbook-summary>span{min-width:0!important;min-height:78px!important;padding:11px 12px!important;border-radius:13px!important;overflow:hidden!important}
+  .money-filter-summary>span:nth-child(3),.finance-workbook-summary>span:nth-child(3){grid-column:1/-1!important;min-height:64px!important}
+  .money-filter-summary small,.finance-workbook-summary small{font-size:8.5px!important;line-height:1.2!important}
+  .money-filter-summary strong,.finance-workbook-summary strong{display:block!important;max-width:100%!important;font-size:clamp(19px,5.6vw,25px)!important;line-height:1.04!important;letter-spacing:-.04em!important;font-variant-numeric:tabular-nums!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+  .money-filter-summary>span:nth-child(3) strong,.finance-workbook-summary>span:nth-child(3) strong{font-size:15px!important;line-height:1.2!important;white-space:normal!important;overflow:visible!important}
+  .money-filter-summary .sage5-kpi-glyph,.finance-workbook-summary .sage5-kpi-glyph{width:28px!important;height:28px!important;top:9px!important;right:9px!important;position:absolute!important}
+
+  /* ---------- Tables stay real tables on mobile ---------- */
+  .table-scroll,.table-scroller,.table-wrap,.money-table-scroll,.finance-workbook-scroll,.request-ledger-scroll,.history-ledger-scroll,.staff-history-scroll,.staff-table-wrap,.platform-table-shell{display:block!important;max-width:100%!important;overflow-x:auto!important;overflow-y:hidden!important;-webkit-overflow-scrolling:touch!important;overscroll-behavior-x:contain!important;scrollbar-width:thin!important}
+  .table-scroll table,.table-scroller table,.table-wrap table,.money-table-scroll table,.finance-workbook-scroll table,.request-ledger-scroll table,.history-ledger-scroll table,.staff-history-scroll table,.staff-table-wrap table,.platform-table-shell table{display:table!important;width:max-content!important;max-width:none!important;border-collapse:separate!important;border-spacing:0!important}
+  .table-scroll thead,.table-scroller thead,.table-wrap thead,.money-table-scroll thead,.finance-workbook-scroll thead,.request-ledger-scroll thead,.history-ledger-scroll thead,.staff-history-scroll thead,.platform-table-shell thead{display:table-header-group!important}
+  .table-scroll tbody,.table-scroller tbody,.table-wrap tbody,.money-table-scroll tbody,.finance-workbook-scroll tbody,.request-ledger-scroll tbody,.history-ledger-scroll tbody,.staff-history-scroll tbody,.platform-table-shell tbody{display:table-row-group!important}
+  .table-scroll tr,.table-scroller tr,.table-wrap tr,.money-table-scroll tr,.finance-workbook-scroll tr,.request-ledger-scroll tr,.history-ledger-scroll tr,.staff-history-scroll tr,.platform-table-shell tr{display:table-row!important}
+  .table-scroll th,.table-scroller th,.table-wrap th,.money-table-scroll th,.finance-workbook-scroll th,.request-ledger-scroll th,.history-ledger-scroll th,.staff-history-scroll th,.platform-table-shell th,
+  .table-scroll td,.table-scroller td,.table-wrap td,.money-table-scroll td,.finance-workbook-scroll td,.request-ledger-scroll td,.history-ledger-scroll td,.staff-history-scroll td,.platform-table-shell td{display:table-cell!important;position:static!important;width:auto!important;max-width:none!important}
+  .table-scroll td::before,.table-scroller td::before,.table-wrap td::before,.money-table-scroll td::before,.finance-workbook-scroll td::before,.request-ledger-scroll td::before,.history-ledger-scroll td::before,.staff-history-scroll td::before,.platform-table-shell td::before{content:none!important;display:none!important}
+  .data-table,.v4-workspace table{min-width:720px!important}
+  .money-ledger-table{min-width:1120px!important;table-layout:fixed!important}
+  .expense-ledger-table{min-width:1240px!important}
+  .finance-workbook-table,.finance-table{min-width:1120px!important;table-layout:fixed!important}
+  .request-ledger,.owner-history-table,.staff-history-table{min-width:900px!important}
+  .platform-admin-table{min-width:980px!important}
+  .data-table th,.v4-workspace th,.finance-workbook-table th,.platform-admin-table th{font-size:8.8px!important;line-height:1.2!important;padding:8px 9px!important;white-space:nowrap!important}
+  .data-table td,.v4-workspace td,.finance-workbook-table td,.platform-admin-table td{font-size:10.5px!important;line-height:1.38!important;padding:9px 9px!important;white-space:normal!important;vertical-align:middle!important}
+  .data-table td small,.v4-workspace td small,.finance-workbook-table td small,.platform-admin-table td small{font-size:8.6px!important;line-height:1.32!important}
+  .data-table td strong,.data-table td b,.v4-workspace td strong,.v4-workspace td b,.finance-workbook-table td strong,.finance-workbook-table td b{font-size:10.8px!important;line-height:1.35!important}
+  .money-ledger-table .control-record-link{font-size:10.5px!important;line-height:1.35!important}
+  .money-amount-cell,.finance-money{font-size:11px!important;font-weight:900!important;white-space:nowrap!important}
+
+  /* ---------- Request pages: detailed but tighter ---------- */
+  .owner-request-card-grid,.staff-request-card-list{gap:10px!important}
+  .owner-request-card-premium,.staff-request-card-premium{padding:13px!important;border-radius:15px!important}
+  .request-amount-hero,.staff-request-amount-card{padding:12px!important;min-height:92px!important}
+  .request-amount-hero strong,.staff-request-amount-card strong{font-size:clamp(22px,6.5vw,29px)!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+  .premium-meta,.owner-request-meta,.staff-request-meta{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:7px!important}
+  .premium-meta>div,.owner-request-meta>div,.staff-request-meta>div{padding:9px!important;min-height:62px!important}
+  .request-item-flow,.staff-request-item-flow{display:flex!important;gap:7px!important;overflow-x:auto!important;padding-bottom:5px!important;scrollbar-width:none!important}
+  .request-item-flow::-webkit-scrollbar,.staff-request-item-flow::-webkit-scrollbar{display:none!important}
+  .request-flow-node,.staff-request-item-flow>*{flex:0 0 138px!important;min-width:138px!important;padding:10px!important}
+  .request-flow-link{flex:0 0 18px!important}
+  .staff-request-wallet-premium{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .staff-request-wallet-premium article{min-height:92px!important;padding:11px!important}
+  .staff-request-wallet-premium article strong{font-size:clamp(20px,6vw,26px)!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+
+  /* ---------- V4 organization pages ---------- */
+  .v4-workspace{gap:13px!important}
+  .v4-workspace .control-disclosure>summary{min-height:46px!important;padding:0 12px!important}
+  .v4-workspace .control-disclosure>summary strong{font-size:10.5px!important}
+  .v4-search-shell{width:min(100%,300px)!important}
+  .v4-search{min-height:38px!important;height:38px!important;font-size:10.5px!important}
+  .v4-form input,.v4-form select,.v4-form textarea{min-height:40px!important;font-size:11px!important}
+  .v4-form .btn{width:auto!important;min-height:36px!important}
+  .v4-workspace .v4-actions{display:flex!important;flex-wrap:wrap!important;gap:7px!important}
+  .v4-workspace .v4-actions .btn{width:auto!important;flex:0 0 auto!important}
+
+  /* ---------- Generic dashboards/cards ---------- */
+  .dashboard-grid,.activity-grid,.finance-grid,.lower-grid,.card-grid.thirds,.department-grid,.report-grid{gap:10px!important}
+  .role-hero,.dashboard-role-hero,.job-tool-card,.department-card,.report-card{border-radius:14px!important}
+  .job-tool-card{min-height:74px!important;padding:11px!important}
+  .job-tool-card strong{font-size:10.5px!important}.job-tool-card small{font-size:8.8px!important}
+  .department-card{min-height:160px!important;padding:13px!important}
+
+  /* ---------- Modal system ---------- */
+  .modal-backdrop{align-items:center!important;padding:8px!important;overflow:hidden!important}
+  .modal-card,.operation-modal-card,.funding-modal-card{width:calc(100vw - 16px)!important;max-width:calc(100vw - 16px)!important;max-height:calc(100dvh - 80px)!important;border-radius:16px!important;overflow-y:auto!important;overflow-x:hidden!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch!important}
+  .modal-head{padding:11px 12px!important;min-height:54px!important}
+  .modal-head h3{font-size:15px!important}.modal-head p{font-size:9px!important}
+  .modal-form{padding:11px!important}
+  .form-grid.two,.form-grid.three,.v4-form-grid{grid-template-columns:1fr!important;gap:9px!important}
+  .modal-form label,.v4-form label{font-size:9.5px!important}
+  .modal-form input,.modal-form select,.modal-form textarea,.v4-form input,.v4-form select,.v4-form textarea{min-height:40px!important;font-size:11px!important}
+  .modal-actions{padding:9px 11px max(9px,env(safe-area-inset-bottom))!important;gap:7px!important}
+  .modal-actions .btn{min-height:36px!important}
+  body>.v4-modal-panel.v4-dialog-live{width:calc(100vw - 16px)!important;max-width:calc(100vw - 16px)!important;max-height:calc(100dvh - 80px)!important;border-radius:16px!important}
+  body>.v4-modal-panel.v4-dialog-live>.v4-modal-content{padding:12px!important}
+  body>.v4-modal-panel.v4-dialog-live .v4-form label{min-height:0!important;padding:8px 9px!important}
+
+  /* ---------- No lift/jump motion on touch layouts ---------- */
+  :where(.panel,.stat-card,.mini-stat,.department-card,.owner-request-card,.owner-request-card-premium,.staff-request-card-premium,.finance-kpi,.job-tool-card,.v4-workspace .control-metrics>article):hover{transform:none!important;translate:none!important;scale:none!important}
+}
+
+@media (max-width: 540px) {
+  .page-shell{padding-left:10px!important;padding-right:10px!important}
+  .page-heading h1,.v4-workspace .page-heading h1{font-size:clamp(21px,6.8vw,25px)!important}
+  .page-heading p,.v4-workspace .page-heading p{font-size:10.8px!important}
+  .income-kpi-grid>article,.expense-kpi-grid>article{min-height:104px!important;padding:11px!important}
+  .income-kpi-grid>article strong,.expense-kpi-grid>article strong{font-size:clamp(19px,6.1vw,24px)!important}
+  .income-insight-grid>article strong,.expense-insight-grid>article strong{font-size:clamp(18px,5.7vw,22px)!important}
+  .dashboard-summary-amount strong{font-size:clamp(19px,6.2vw,25px)!important}
+  .money-filter-shell>label,.finance-workbook-filters>label{flex-basis:104px!important;width:104px!important;min-width:104px!important}
+  .money-filter-shell>.money-search-field,.finance-workbook-filters>.finance-workbook-search{flex-basis:142px!important;width:142px!important;min-width:142px!important}
+  .money-filter-summary strong,.finance-workbook-summary strong{font-size:clamp(18px,5.8vw,23px)!important}
+  .premium-meta,.owner-request-meta,.staff-request-meta{grid-template-columns:1fr 1fr!important}
+}
+
+@media (max-width: 380px) {
+  .income-kpi-grid>article strong,.expense-kpi-grid>article strong,.dashboard-summary-amount strong{font-size:19px!important}
+  .income-insight-grid>article strong,.expense-insight-grid>article strong{font-size:18px!important}
+  .money-filter-summary strong,.finance-workbook-summary strong{font-size:18px!important}
+  .topbar-actions{gap:3px!important}
+  .font-control{display:none!important}
+}
+
+@media (max-width: 820px) {
+  /* ---------- Authentication / registration ---------- */
+  .auth-form-panel{min-height:100dvh!important;padding:64px 16px 28px!important}
+  .auth-form-wrap{width:100%!important;max-width:560px!important;margin:0 auto!important}
+  .auth-form-wrap h2,.registration-heading h2{font-size:clamp(23px,6.5vw,29px)!important;line-height:1.1!important}
+  .auth-form-wrap>p,.registration-heading p{font-size:11px!important;line-height:1.5!important}
+  .auth-form label{font-size:10px!important;gap:6px!important}
+  .auth-form input,.auth-form select,.auth-form textarea{min-height:42px!important;font-size:11px!important}
+  .auth-submit,.auth-submit-inline{min-height:42px!important;font-size:11px!important}
+  .registration-heading{gap:10px!important;margin-bottom:16px!important}
+  .form-grid.two,.form-grid.three,.auth-password-grid{grid-template-columns:1fr!important}
+  .department-selector,.business-mode-grid,.individual-feature-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important}
+  .step-actions{gap:8px!important}.step-actions .btn{min-height:38px!important}
+
+  /* ---------- Developer console ---------- */
+  .platform-admin-body .platform-app{min-width:0!important}
+  .platform-admin-body .platform-v2-topbar{height:62px!important;padding:0 10px!important}
+  .platform-admin-body .platform-main{padding:14px 10px 80px!important}
+  .platform-admin-body .platform-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important}
+  .platform-admin-body .platform-kpi-card{min-height:92px!important;padding:11px!important}
+  .platform-admin-body .platform-kpi-card strong{font-size:clamp(20px,6vw,27px)!important}
+  .platform-admin-body .platform-v2-card{padding:12px!important;border-radius:14px!important}
+  .platform-admin-body .platform-v2-card-head h2{font-size:17px!important}
+  .platform-admin-body .platform-v2-card-head p{font-size:9.5px!important}
+  .platform-admin-body .platform-table-shell{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important}
+  .platform-admin-login-shell{min-height:100dvh!important;padding:14px!important}
+  .platform-admin-login-frame{width:100%!important;max-width:520px!important;grid-template-columns:1fr!important}
+  .platform-admin-login-visual{display:none!important}
+  .platform-auth-card{padding:24px 18px!important;border-radius:16px!important}
+  .platform-auth-card h1{font-size:27px!important}
+  .platform-auth-form input{min-height:42px!important;font-size:11px!important}
+}
